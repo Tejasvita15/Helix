@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict, dataclass
+from math import hypot
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +16,17 @@ except ImportError:  # pragma: no cover - supports direct script execution.
 
 
 MIN_VALID_POINTS = 2
+
+
+@dataclass(frozen=True)
+class DrawingCompletionStats:
+    valid_point_count: int
+    stroke_count_with_at_least_2_valid_points: int
+    total_ink_length_px: float
+    canvas_valid: bool
+
+    def to_dict(self) -> dict[str, bool | float | int]:
+        return asdict(self)
 
 
 def render_strokes_to_image(
@@ -54,6 +67,36 @@ def render_strokes_to_image(
     return image
 
 
+def compute_completion_stats(payload: ClockDrawingPayload | dict[str, Any]) -> DrawingCompletionStats:
+    """Compute drawing completion stats before model scoring."""
+
+    parsed = payload if isinstance(payload, ClockDrawingPayload) else ClockDrawingPayload.from_raw(payload)
+    if not parsed.canvas.is_valid:
+        return DrawingCompletionStats(
+            valid_point_count=0,
+            stroke_count_with_at_least_2_valid_points=0,
+            total_ink_length_px=0.0,
+            canvas_valid=False,
+        )
+
+    valid_point_count = 0
+    stroke_count_with_at_least_2_valid_points = 0
+    total_ink_length_px = 0.0
+    for stroke in parsed.strokes:
+        valid_points = [point for point in stroke.points if _is_point_in_canvas(point, parsed)]
+        valid_point_count += len(valid_points)
+        if len(valid_points) >= MIN_VALID_POINTS:
+            stroke_count_with_at_least_2_valid_points += 1
+            total_ink_length_px += _stroke_length(valid_points)
+
+    return DrawingCompletionStats(
+        valid_point_count=valid_point_count,
+        stroke_count_with_at_least_2_valid_points=stroke_count_with_at_least_2_valid_points,
+        total_ink_length_px=round(total_ink_length_px, 3),
+        canvas_valid=True,
+    )
+
+
 def count_renderable_points(payload: ClockDrawingPayload | dict[str, Any]) -> int:
     """Count points that can be safely placed on the declared canvas."""
 
@@ -81,3 +124,10 @@ def _scale_point(
     x = max(0, min(output_size - 1, round(point.x * x_scale)))
     y = max(0, min(output_size - 1, round(point.y * y_scale)))
     return x, y
+
+
+def _stroke_length(points: list[ClockPoint]) -> float:
+    return sum(
+        hypot(current.x - previous.x, current.y - previous.y)
+        for previous, current in zip(points, points[1:])
+    )

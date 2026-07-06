@@ -9,14 +9,18 @@ from typing import Any
 
 try:
     from .labels import UNCERTAIN_SIGNAL
-    from .renderer import MIN_VALID_POINTS, count_renderable_points, render_strokes_to_image
+    from .renderer import DrawingCompletionStats, compute_completion_stats, render_strokes_to_image
     from .schemas import ClockDrawingPayload
     from .scorer import DEFAULT_MODEL_PATH, DEFAULT_THRESHOLD, build_safe_result, score_image
 except ImportError:  # pragma: no cover - supports direct script execution.
     from labels import UNCERTAIN_SIGNAL
-    from renderer import MIN_VALID_POINTS, count_renderable_points, render_strokes_to_image
+    from renderer import DrawingCompletionStats, compute_completion_stats, render_strokes_to_image
     from schemas import ClockDrawingPayload
     from scorer import DEFAULT_MODEL_PATH, DEFAULT_THRESHOLD, build_safe_result, score_image
+
+
+MIN_COMPLETION_VALID_POINTS = 20
+MIN_COMPLETION_INK_LENGTH_PX = 80.0
 
 
 def score_payload(
@@ -28,21 +32,26 @@ def score_payload(
     """Render a stroke payload and score it through the image baseline."""
 
     parsed = payload if isinstance(payload, ClockDrawingPayload) else ClockDrawingPayload.from_raw(payload)
-    incomplete_reason = _incomplete_reason(parsed)
+    completion_stats = compute_completion_stats(parsed)
+    incomplete_reason = _incomplete_reason(parsed, completion_stats)
     if incomplete_reason is not None:
         return build_safe_result(
             signal_band=UNCERTAIN_SIGNAL,
             confidence=0.0,
-            metadata={"task_completed": False, "reason": incomplete_reason},
+            metadata={
+                "task_completed": False,
+                "reason": incomplete_reason,
+                "completion_stats": completion_stats.to_dict(),
+            },
         )
 
     try:
         rendered = render_strokes_to_image(parsed, save_path=save_rendered)
-    except Exception as exc:
+    except Exception:
         return build_safe_result(
             signal_band=UNCERTAIN_SIGNAL,
             confidence=0.0,
-            metadata={"task_completed": False, "reason": f"rendering failed ({exc})"},
+            metadata={"task_completed": False, "reason": "rendering_failed"},
         )
 
     return score_image(rendered, model_path=model_path, threshold=threshold)
@@ -72,15 +81,22 @@ def main() -> None:
     )
     print(json.dumps(result, indent=2, sort_keys=True))
 
-
-def _incomplete_reason(payload: ClockDrawingPayload) -> str | None:
-    if not payload.canvas.is_valid:
-        return "canvas is invalid"
+def _incomplete_reason(
+    payload: ClockDrawingPayload,
+    completion_stats: DrawingCompletionStats,
+    min_valid_points: int = MIN_COMPLETION_VALID_POINTS,
+    min_total_ink_length_px: float = MIN_COMPLETION_INK_LENGTH_PX,
+) -> str | None:
+    if not completion_stats.canvas_valid:
+        return "invalid_canvas"
     if not payload.strokes or not payload.has_strokes:
-        return "no strokes were provided"
-    valid_point_count = count_renderable_points(payload)
-    if valid_point_count < MIN_VALID_POINTS:
-        return f"too few valid points ({valid_point_count})"
+        return "no_strokes"
+    if completion_stats.valid_point_count < min_valid_points:
+        return "too_few_points"
+    if completion_stats.stroke_count_with_at_least_2_valid_points < 1:
+        return "no_complete_stroke"
+    if completion_stats.total_ink_length_px < min_total_ink_length_px:
+        return "insufficient_ink"
     return None
 
 

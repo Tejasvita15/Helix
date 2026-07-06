@@ -115,9 +115,10 @@ class ClockScoreResult:
     report_summary: str
     model_version: str
     scoring_mode: str
+    reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return {key: value for key, value in asdict(self).items() if value is not None}
 
 
 def _float_or_zero(value: Any) -> float:

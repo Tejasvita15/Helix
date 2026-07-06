@@ -43,6 +43,10 @@ SAMPLE_PAYLOAD = {
         },
         {"points": [{"x": 160, "y": 160, "t": 240}, {"x": 160, "y": 78, "t": 256}]},
         {"points": [{"x": 160, "y": 160, "t": 280}, {"x": 102, "y": 126, "t": 296}]},
+        {"points": [{"x": 156, "y": 58, "t": 320}, {"x": 164, "y": 58, "t": 336}]},
+        {"points": [{"x": 270, "y": 156, "t": 360}, {"x": 282, "y": 156, "t": 376}]},
+        {"points": [{"x": 156, "y": 274, "t": 400}, {"x": 164, "y": 274, "t": 416}]},
+        {"points": [{"x": 42, "y": 156, "t": 440}, {"x": 54, "y": 156, "t": 456}]},
     ],
     "metadata": {"completion_time_ms": 42000, "clear_count": 1, "undo_count": 0, "device": "mobile"},
 }
@@ -55,7 +59,28 @@ def main() -> None:
     valid_response.raise_for_status()
     valid_payload = valid_response.json()
     assert valid_payload["task"] == "clock_drawing"
+    assert valid_payload["task_completed"] is True
     assert valid_payload["signal_band"] in {"low_signal", "medium_signal", "higher_signal", "uncertain"}
+
+    two_point_response = client.post(
+        "/task/drawing/score",
+        json={
+            **SAMPLE_PAYLOAD,
+            "strokes": [
+                {
+                    "points": [
+                        {"x": 100, "y": 120, "t": 0},
+                        {"x": 101, "y": 121, "t": 16},
+                    ]
+                }
+            ],
+        },
+    )
+    two_point_response.raise_for_status()
+    two_point_payload = two_point_response.json()
+    assert two_point_payload["task_completed"] is False
+    assert two_point_payload["signal_band"] == "uncertain"
+    assert two_point_payload["reason"] == "too_few_points"
 
     empty_response = client.post(
         "/task/drawing/score",
@@ -65,6 +90,16 @@ def main() -> None:
     empty_payload = empty_response.json()
     assert empty_payload["task_completed"] is False
     assert empty_payload["signal_band"] == "uncertain"
+
+    invalid_canvas_response = client.post(
+        "/task/drawing/score",
+        json={**SAMPLE_PAYLOAD, "canvas": {"width": 0, "height": 320}},
+    )
+    invalid_canvas_response.raise_for_status()
+    invalid_canvas_payload = invalid_canvas_response.json()
+    assert invalid_canvas_payload["task_completed"] is False
+    assert invalid_canvas_payload["signal_band"] == "uncertain"
+    assert invalid_canvas_payload["reason"] == "invalid_canvas"
 
     with TemporaryDirectory() as temp_dir:
         old_model_path = os.environ.get("CLOCK_SIGNAL_MODEL_PATH")

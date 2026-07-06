@@ -182,6 +182,31 @@ If the canvas or stroke data is incomplete, or the model cannot be loaded, the
 endpoint returns `task_completed: false` and `signal_band: "uncertain"` rather
 than exposing backend error details.
 
+Incomplete drawing payloads are not sent to the model. The current completion
+thresholds are:
+
+- Canvas width and height must be greater than `0`.
+- At least `20` valid in-canvas points.
+- At least one stroke with `2` or more valid in-canvas points.
+- At least `80` pixels of total ink length in original canvas coordinates.
+
+Incomplete response example:
+
+```json
+{
+  "task": "clock_drawing",
+  "task_completed": false,
+  "signal_band": "uncertain",
+  "confidence": 0.0,
+  "domains": ["visuospatial", "planning"],
+  "explanation": "The drawing was too incomplete to score reliably. Please try the task again.",
+  "report_summary": "Clock drawing task was incomplete or could not be scored reliably.",
+  "model_version": "clock_signal_baseline_v0",
+  "scoring_mode": "image_baseline_v0",
+  "reason": "too_few_points"
+}
+```
+
 ## POST /score
 
 Combines all available signals.

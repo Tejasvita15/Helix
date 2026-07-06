@@ -93,6 +93,7 @@ def build_safe_result(
         report_summary=report_summary,
         model_version=model_version,
         scoring_mode=SCORING_MODE,
+        reason=str(reason) if reason else None,
     ).to_dict()
 
 
@@ -113,6 +114,8 @@ def _metadata_to_dict(metadata: ClockDrawingMetadata | dict[str, Any] | None) ->
 
 
 def _explanation_for_signal(signal_band: str, reason: Any = None) -> str:
+    if reason in _INCOMPLETE_REASONS:
+        return "The drawing was too incomplete to score reliably. Please try the task again."
     if signal_band == LOW_SIGNAL:
         return "No strong visuospatial/planning signal was found in this clock task. This is not a diagnosis."
     if signal_band == MEDIUM_SIGNAL:
@@ -126,6 +129,8 @@ def _explanation_for_signal(signal_band: str, reason: Any = None) -> str:
 
 
 def _report_summary_for_signal(signal_band: str, task_completed: bool, reason: Any = None) -> str:
+    if reason in _INCOMPLETE_REASONS:
+        return "Clock drawing task was incomplete or could not be scored reliably."
     if not task_completed:
         detail = f" Reason: {reason}." if reason else ""
         return f"Clock drawing task was not scored reliably.{detail} Consider retrying or reviewing with a caregiver or GP if concerns persist."
@@ -136,3 +141,12 @@ def _report_summary_for_signal(signal_band: str, task_completed: bool, reason: A
     if signal_band == HIGHER_SIGNAL:
         return "Clock drawing task showed a stronger possible visuospatial/planning signal. Consider follow-up with a GP if this is new, persistent, or affecting daily life."
     return "Clock drawing task result is uncertain. Consider retrying or reviewing with a caregiver or GP if concerns persist."
+
+
+_INCOMPLETE_REASONS = {
+    "invalid_canvas",
+    "no_strokes",
+    "too_few_points",
+    "no_complete_stroke",
+    "insufficient_ink",
+}

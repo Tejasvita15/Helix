@@ -19,7 +19,7 @@ def score_clock_drawing_payload(payload: dict[str, Any], threshold: float = DEFA
     try:
         return _score_with_adapter(payload, threshold=threshold)
     except Exception:
-        return _safe_uncertain_result("scoring service unavailable")
+        return _safe_uncertain_result("scoring_error")
 
 
 def resolve_model_path() -> Path:
@@ -45,11 +45,11 @@ def _safe_uncertain_result(reason: str) -> dict[str, Any]:
         "signal_band": "uncertain",
         "confidence": 0.0,
         "domains": ["visuospatial", "planning"],
-        "explanation": f"The clock task could not be scored reliably: {reason}. This is not a diagnosis.",
+        "explanation": "The clock task could not be scored reliably. Please try the task again.",
         "report_summary": (
-            "Clock drawing task was not scored reliably. Consider retrying or reviewing "
-            "with a caregiver or GP if concerns persist."
+            "Clock drawing task was incomplete or could not be scored reliably."
         ),
         "model_version": "clock_signal_baseline_v0",
         "scoring_mode": "image_baseline_v0",
+        "reason": reason,
     }

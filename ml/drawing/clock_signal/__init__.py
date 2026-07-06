@@ -13,7 +13,7 @@ from .labels import (
     SIGNAL_TEXT,
     shulman_score_to_signal,
 )
-from .renderer import render_strokes_to_image
+from .renderer import DrawingCompletionStats, compute_completion_stats, render_strokes_to_image
 from .schemas import (
     ClockCanvas,
     ClockDrawingMetadata,
@@ -33,10 +33,12 @@ __all__ = [
     "ClockPoint",
     "ClockScoreResult",
     "ClockStroke",
+    "DrawingCompletionStats",
     "SAFETY_STATEMENT",
     "SIGNAL_CLASSES",
     "SIGNAL_TEXT",
     "build_safe_result",
+    "compute_completion_stats",
     "extract_hog_features_from_path",
     "extract_hog_features_from_zip",
     "iter_clock_image_records",
