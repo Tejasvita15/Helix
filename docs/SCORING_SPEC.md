@@ -65,6 +65,10 @@ MVP features:
 - `clock_number_placement_score` if implemented
 - `clock_hand_placement_score` if implemented
 
+The production MVP path should score mobile-captured stroke JSON. Any copied
+image-classifier experiments are research references only until reviewed and
+adapted into MindTrail-owned scoring code.
+
 Initial MVP scoring can be rule-based:
 
 ```text
