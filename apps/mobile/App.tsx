@@ -27,6 +27,7 @@ type Screen =
   | "report";
 
 type Band = "green" | "amber" | "red";
+type SignalBand = "low_signal" | "medium_signal" | "higher_signal" | "uncertain";
 
 type Signal = {
   domain: string;
@@ -49,6 +50,39 @@ type Point = {
   t: number;
 };
 
+type DrawingStroke = {
+  points: Point[];
+};
+
+type DrawingScoreResult = {
+  task: "clock_drawing";
+  task_completed: boolean;
+  signal_band: SignalBand;
+  confidence: number;
+  domains: string[];
+  explanation: string;
+  report_summary: string;
+  model_version: string;
+  scoring_mode: string;
+  reason?: string;
+};
+
+type DrawingScorePayload = {
+  task_id: "clock_drawing";
+  instruction: string;
+  canvas: {
+    width: number;
+    height: number;
+  };
+  strokes: DrawingStroke[];
+  metadata: {
+    completion_time_ms: number;
+    clear_count: number;
+    undo_count: number;
+    device: "mobile";
+  };
+};
+
 type ChecklistKey =
   | "repeated_questions"
   | "missed_medication"
@@ -60,11 +94,15 @@ type ChecklistKey =
 const DISCLAIMER =
   "This is not a diagnosis. Please discuss new or worsening concerns with a healthcare professional.";
 
+const CLOCK_DRAWING_INSTRUCTION = "Draw a clock showing 10 past 11.";
+const MIN_LOCAL_DRAWING_POINTS = 20;
+
 function getApiBaseUrl() {
   if (Platform.OS === "web") {
-    return "http://127.0.0.1:8000";
+    return "http://localhost:8000";
   }
 
+  // TODO: For physical device demos, configure this with the host machine IP.
   const scriptUrl = NativeModules.SourceCode?.scriptURL as string | undefined;
   const match = scriptUrl?.match(/https?:\/\/([^:/]+)/);
   if (match?.[1]) {
@@ -112,6 +150,57 @@ function bandLabel(band: Band) {
     return "Monitor";
   }
   return "No strong signal";
+}
+
+function signalBandLabel(signalBand: SignalBand) {
+  if (signalBand === "low_signal") {
+    return "Low signal";
+  }
+  if (signalBand === "medium_signal") {
+    return "Medium signal";
+  }
+  if (signalBand === "higher_signal") {
+    return "Higher signal";
+  }
+  return "Uncertain";
+}
+
+function signalBandColor(signalBand: SignalBand) {
+  if (signalBand === "higher_signal") {
+    return "#b45309";
+  }
+  if (signalBand === "medium_signal") {
+    return "#0f766e";
+  }
+  if (signalBand === "low_signal") {
+    return "#047857";
+  }
+  return "#57534e";
+}
+
+function drawingStatusLabel(result: DrawingScoreResult) {
+  if (!result.task_completed) {
+    return "Task incomplete";
+  }
+  if (result.signal_band === "uncertain") {
+    return "Unable to score reliably";
+  }
+  return "Task scored";
+}
+
+function logDrawingPayloadForDev(payload: DrawingScorePayload) {
+  if (typeof __DEV__ === "undefined" || !__DEV__) {
+    return;
+  }
+
+  console.log("Clock drawing payload shape", {
+    task_id: payload.task_id,
+    canvas: payload.canvas,
+    stroke_count: payload.strokes.length,
+    point_count: payload.strokes.reduce((total, stroke) => total + stroke.points.length, 0),
+    first_stroke_point_count: payload.strokes[0]?.points.length ?? 0,
+    metadata: payload.metadata,
+  });
 }
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
@@ -229,6 +318,30 @@ function LineSegment({ start, end }: { start: Point; end: Point }) {
   );
 }
 
+function DrawingResultCard({ result }: { result: DrawingScoreResult }) {
+  return (
+    <View style={styles.signalCard}>
+      <View style={styles.signalHeader}>
+        <Text style={styles.signalDomain}>Clock drawing</Text>
+        <Text
+          style={[
+            styles.bandPill,
+            {
+              color: signalBandColor(result.signal_band),
+              borderColor: signalBandColor(result.signal_band),
+            },
+          ]}
+        >
+          {signalBandLabel(result.signal_band)}
+        </Text>
+      </View>
+      <Text style={styles.statusText}>{drawingStatusLabel(result)}</Text>
+      <Text style={styles.signalReason}>{result.explanation}</Text>
+      <Text style={styles.metaText}>{result.report_summary}</Text>
+    </View>
+  );
+}
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>("welcome");
   const [loading, setLoading] = useState(false);
@@ -239,9 +352,14 @@ export default function App() {
   const [caregiverAssisted, setCaregiverAssisted] = useState(true);
   const [checklist, setChecklist] = useState(initialChecklist);
   const [moodChange, setMoodChange] = useState("unsure");
-  const [strokes, setStrokes] = useState<Point[][]>([]);
+  const [strokes, setStrokes] = useState<DrawingStroke[]>([]);
   const [clearCount, setClearCount] = useState(0);
+  const [undoCount] = useState(0);
   const [drawingStartedAt, setDrawingStartedAt] = useState(Date.now());
+  const [canvasDimensions, setCanvasDimensions] = useState({ width: 320, height: 320 });
+  const [drawingScoreResult, setDrawingScoreResult] = useState<DrawingScoreResult | null>(null);
+  const [drawingSubmitState, setDrawingSubmitState] = useState<"idle" | "submitting" | "success" | "error">("idle");
+  const [drawingError, setDrawingError] = useState("");
   const [drawingSignal, setDrawingSignal] = useState<Signal | null>(null);
   const [modelSource, setModelSource] = useState("");
   const [scoreSummary, setScoreSummary] = useState<ScoreSummary | null>(null);
@@ -250,6 +368,8 @@ export default function App() {
   useEffect(() => {
     if (screen === "drawing") {
       setDrawingStartedAt(Date.now());
+      setDrawingSubmitState("idle");
+      setDrawingError("");
     }
   }, [screen]);
 
@@ -258,27 +378,30 @@ export default function App() {
 
   const startStroke = (event: GestureResponderEvent) => {
     const { locationX, locationY } = event.nativeEvent;
-    const t = (Date.now() - drawingStartedAt) / 1000;
-    setStrokes((current) => [...current, [{ x: locationX, y: locationY, t }]]);
+    if (!isPointInsideCanvas(locationX, locationY)) {
+      return;
+    }
+    const t = Date.now() - drawingStartedAt;
+    setStrokes((current) => [...current, { points: [{ x: locationX, y: locationY, t }] }]);
   };
 
   const addPoint = (event: GestureResponderEvent) => {
     const { locationX, locationY } = event.nativeEvent;
-    if (locationX < 0 || locationY < 0 || locationX > canvasSize || locationY > canvasSize) {
+    if (!isPointInsideCanvas(locationX, locationY)) {
       return;
     }
-    const t = (Date.now() - drawingStartedAt) / 1000;
+    const t = Date.now() - drawingStartedAt;
     setStrokes((current) => {
       if (current.length === 0) {
-        return [[{ x: locationX, y: locationY, t }]];
+        return [{ points: [{ x: locationX, y: locationY, t }] }];
       }
       const next = [...current];
       const lastStroke = next[next.length - 1];
-      const lastPoint = lastStroke[lastStroke.length - 1];
+      const lastPoint = lastStroke.points[lastStroke.points.length - 1];
       if (lastPoint && Math.abs(lastPoint.x - locationX) + Math.abs(lastPoint.y - locationY) < 2) {
         return current;
       }
-      next[next.length - 1] = [...lastStroke, { x: locationX, y: locationY, t }];
+      next[next.length - 1] = { points: [...lastStroke.points, { x: locationX, y: locationY, t }] };
       return next;
     });
   };
@@ -291,8 +414,13 @@ export default function App() {
         onPanResponderGrant: startStroke,
         onPanResponderMove: addPoint,
       }),
-    [drawingStartedAt],
+    [drawingStartedAt, canvasDimensions.height, canvasDimensions.width],
   );
+
+  const validDrawingPointCount = () => strokes.reduce((total, stroke) => total + stroke.points.length, 0);
+
+  const isPointInsideCanvas = (x: number, y: number) =>
+    x >= 0 && y >= 0 && x <= canvasDimensions.width && y <= canvasDimensions.height;
 
   const startSession = async () => {
     setLoading(true);
@@ -358,26 +486,38 @@ export default function App() {
       Alert.alert("Draw the clock first", "Please draw a clock showing 10 past 11.");
       return;
     }
+    if (validDrawingPointCount() < MIN_LOCAL_DRAWING_POINTS) {
+      setDrawingError("Please draw the full clock before submitting.");
+      Alert.alert("Keep drawing", "Please draw the full clock before submitting.");
+      return;
+    }
     setLoading(true);
+    setDrawingSubmitState("submitting");
+    setDrawingError("");
     try {
-      const response = await postJson<{
-        drawing_signal: Signal;
-        model_source: string;
-      }>("/task/drawing", {
-        session_id: sessionId,
-        task_type: "clock_draw",
-        completion_time_sec: elapsedDrawingSeconds(),
-        clear_count: clearCount,
-        canvas_width: canvasSize,
-        canvas_height: canvasSize,
+      const drawingPayload: DrawingScorePayload = {
+        task_id: "clock_drawing",
+        instruction: CLOCK_DRAWING_INSTRUCTION,
+        canvas: {
+          width: canvasDimensions.width,
+          height: canvasDimensions.height,
+        },
         strokes,
-      });
-      setDrawingSignal(response.drawing_signal);
-      setModelSource(response.model_source);
-      const score = await postJson<ScoreSummary>("/score", { session_id: sessionId });
-      setScoreSummary(score);
+        metadata: {
+          completion_time_ms: Math.max(1, Date.now() - drawingStartedAt),
+          clear_count: clearCount,
+          undo_count: undoCount,
+          device: "mobile",
+        },
+      };
+      logDrawingPayloadForDev(drawingPayload);
+      const response = await postJson<DrawingScoreResult>("/task/drawing/score", drawingPayload);
+      setDrawingScoreResult(response);
+      setDrawingSubmitState("success");
       setScreen("results");
     } catch (error) {
+      setDrawingSubmitState("error");
+      setDrawingError("Could not score drawing. Please check that the API server is running.");
       Alert.alert("Could not score drawing", "Please check that the API server is running.");
     } finally {
       setLoading(false);
@@ -388,6 +528,9 @@ export default function App() {
     setStrokes([]);
     setClearCount((count) => count + 1);
     setDrawingStartedAt(Date.now());
+    setDrawingScoreResult(null);
+    setDrawingSubmitState("idle");
+    setDrawingError("");
   };
 
   const toggleChecklist = (key: ChecklistKey) => {
@@ -396,10 +539,10 @@ export default function App() {
 
   const renderDrawing = () =>
     strokes.flatMap((stroke, strokeIndex) =>
-      stroke.slice(1).map((point, pointIndex) => (
+      stroke.points.slice(1).map((point, pointIndex) => (
         <LineSegment
           key={`${strokeIndex}-${pointIndex}`}
-          start={stroke[pointIndex]}
+          start={stroke.points[pointIndex]}
           end={point}
         />
       )),
@@ -421,8 +564,8 @@ export default function App() {
     return (
       <ScreenShell title="Before you begin" eyebrow="Consent">
         <Text style={styles.body}>
-          MindTrail SG does not diagnose dementia. It helps identify possible cognitive-risk
-          signals that may be worth discussing with a GP or caregiver.
+          MindTrail SG does not provide a diagnosis. It helps identify possible thinking and
+          planning signals that may be worth discussing with a GP or caregiver.
         </Text>
         <PrimaryButton label="I understand" onPress={() => setScreen("profile")} />
         <SecondaryButton label="Back" onPress={() => setScreen("welcome")} />
@@ -511,17 +654,28 @@ export default function App() {
 
   if (screen === "drawing") {
     return (
-      <ScreenShell title="Draw a clock showing 10 past 11" eyebrow="Step 4 of 5">
+      <ScreenShell title={CLOCK_DRAWING_INSTRUCTION} eyebrow="Step 4 of 5">
         <View style={styles.canvasWrap}>
-          <View style={styles.canvas} {...panResponder.panHandlers}>
+          <View
+            style={styles.canvas}
+            onLayout={(event) => {
+              const { width, height } = event.nativeEvent.layout;
+              setCanvasDimensions({ width, height });
+            }}
+            {...panResponder.panHandlers}
+          >
             <View style={styles.canvasGuide} />
             {renderDrawing()}
           </View>
         </View>
         <View style={styles.taskStats}>
           <Text style={styles.statText}>Strokes: {strokes.length}</Text>
+          <Text style={styles.statText}>Points: {validDrawingPointCount()}</Text>
           <Text style={styles.statText}>Clears: {clearCount}</Text>
         </View>
+        {drawingSubmitState === "submitting" ? <Text style={styles.metaText}>Scoring drawing...</Text> : null}
+        {drawingSubmitState === "success" ? <Text style={styles.successText}>Drawing scored.</Text> : null}
+        {drawingError ? <Text style={styles.errorText}>{drawingError}</Text> : null}
         <PrimaryButton label={loading ? "Scoring..." : "Submit clock drawing"} onPress={submitDrawing} disabled={loading} />
         <SecondaryButton label="Clear and retry" onPress={clearDrawing} />
       </ScreenShell>
@@ -540,6 +694,7 @@ export default function App() {
             </Text>
           </View>
         ) : null}
+        {drawingScoreResult ? <DrawingResultCard result={drawingScoreResult} /> : null}
         {signals.map((signal) => (
           <View key={signal.domain} style={styles.signalCard}>
             <View style={styles.signalHeader}>
@@ -551,7 +706,9 @@ export default function App() {
             <Text style={styles.signalReason}>{signal.reason}</Text>
           </View>
         ))}
-        {modelSource ? <Text style={styles.metaText}>Clock model source: {modelSource}</Text> : null}
+        {!drawingScoreResult && signals.length === 0 ? (
+          <Text style={styles.body}>Drawing result is not available yet. Return to the drawing task and try again.</Text>
+        ) : null}
         <PrimaryButton label="View report summary" onPress={() => setScreen("report")} />
       </ScreenShell>
     );
@@ -559,6 +716,7 @@ export default function App() {
 
   return (
     <ScreenShell title="GP-ready report summary" eyebrow="Report">
+      {drawingScoreResult ? <DrawingResultCard result={drawingScoreResult} /> : null}
       {scoreSummary ? (
         <>
           <Text style={styles.body}>Session: {scoreSummary.session_id}</Text>
@@ -569,8 +727,10 @@ export default function App() {
           ))}
           <Text style={styles.metaText}>HTML report endpoint: {API_BASE_URL}/report/{scoreSummary.session_id}</Text>
         </>
+      ) : !drawingScoreResult ? (
+        <Text style={styles.body}>Complete the clock drawing task to generate a report summary.</Text>
       ) : (
-        <Text style={styles.body}>No score is available yet.</Text>
+        <Text style={styles.body}>Clock drawing summary is ready. Caregiver and GP report details can be added after the remaining tasks are scored.</Text>
       )}
       <PrimaryButton label="Start another check" onPress={() => setScreen("welcome")} />
     </ScreenShell>
@@ -820,11 +980,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
+  statusText: {
+    marginBottom: 8,
+    color: "#1f2937",
+    fontSize: 13,
+    fontWeight: "800",
+  },
   metaText: {
     marginTop: 8,
     color: "#57534e",
     fontSize: 13,
     lineHeight: 19,
+  },
+  successText: {
+    marginBottom: 8,
+    color: "#047857",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  errorText: {
+    marginBottom: 8,
+    color: "#b91c1c",
+    fontSize: 14,
+    fontWeight: "700",
+    lineHeight: 20,
   },
   recommendation: {
     marginBottom: 10,

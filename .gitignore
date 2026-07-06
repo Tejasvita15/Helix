@@ -32,6 +32,9 @@ pnpm-debug.log*
 .expo-shared/
 dist/
 web-build/
+apps/mobile/.nvmrc
+apps/mobile/.watchmanconfig
+apps/mobile/metro.config.js
 
 # Mobile native build outputs
 apps/mobile/android/
