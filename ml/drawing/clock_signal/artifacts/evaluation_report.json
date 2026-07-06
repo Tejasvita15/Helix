@@ -1,0 +1,124 @@
+{
+  "labels": [
+    "low_signal",
+    "medium_signal",
+    "higher_signal"
+  ],
+  "model_info_path": "/Users/swarangisatpute/Desktop/NTU_Academics/Projects/HealthAI Hackathon/Helix/ml/drawing/clock_signal/artifacts/clock_signal_model_info.json",
+  "model_path": "/Users/swarangisatpute/Desktop/NTU_Academics/Projects/HealthAI Hackathon/Helix/ml/drawing/clock_signal/artifacts/clock_signal_baseline.joblib",
+  "safety_statement": "This is not a diagnosis. Please discuss new or worsening concerns with a healthcare professional.",
+  "test": {
+    "classification_report": {
+      "accuracy": 0.6693418940609952,
+      "higher_signal": {
+        "f1-score": 0.6956521739130435,
+        "precision": 0.6736842105263158,
+        "recall": 0.7191011235955056,
+        "support": 89.0
+      },
+      "low_signal": {
+        "f1-score": 0.7503828483920367,
+        "precision": 0.7469512195121951,
+        "recall": 0.7538461538461538,
+        "support": 325.0
+      },
+      "macro avg": {
+        "f1-score": 0.6580507939060944,
+        "precision": 0.6535451433461703,
+        "recall": 0.6632312296416377,
+        "support": 623.0
+      },
+      "medium_signal": {
+        "f1-score": 0.528117359413203,
+        "precision": 0.54,
+        "recall": 0.5167464114832536,
+        "support": 209.0
+      },
+      "weighted avg": {
+        "f1-score": 0.6679999957031014,
+        "precision": 0.6670578508480024,
+        "recall": 0.6693418940609952,
+        "support": 623.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        245,
+        76,
+        4
+      ],
+      [
+        74,
+        108,
+        27
+      ],
+      [
+        9,
+        16,
+        64
+      ]
+    ],
+    "metrics": {
+      "accuracy": 0.669342,
+      "balanced_accuracy": 0.663231,
+      "macro_f1": 0.658051
+    }
+  },
+  "validation": {
+    "classification_report": {
+      "accuracy": 0.6645264847512039,
+      "higher_signal": {
+        "f1-score": 0.6395348837209303,
+        "precision": 0.6547619047619048,
+        "recall": 0.625,
+        "support": 88.0
+      },
+      "low_signal": {
+        "f1-score": 0.7427701674277017,
+        "precision": 0.7349397590361446,
+        "recall": 0.7507692307692307,
+        "support": 325.0
+      },
+      "macro avg": {
+        "f1-score": 0.6446212680487446,
+        "precision": 0.6484190731178683,
+        "recall": 0.6411294261294261,
+        "support": 623.0
+      },
+      "medium_signal": {
+        "f1-score": 0.551558752997602,
+        "precision": 0.5555555555555556,
+        "recall": 0.5476190476190477,
+        "support": 210.0
+      },
+      "weighted avg": {
+        "f1-score": 0.663734690707771,
+        "precision": 0.6631478908065189,
+        "recall": 0.6645264847512039,
+        "support": 623.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        244,
+        72,
+        9
+      ],
+      [
+        75,
+        115,
+        20
+      ],
+      [
+        13,
+        20,
+        55
+      ]
+    ],
+    "metrics": {
+      "accuracy": 0.664526,
+      "balanced_accuracy": 0.641129,
+      "macro_f1": 0.644621
+    }
+  }
+}
