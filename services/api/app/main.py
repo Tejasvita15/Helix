@@ -11,6 +11,11 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 try:
+    from app.services.drawing_score_service import score_clock_drawing_payload
+except ModuleNotFoundError:  # pragma: no cover - supports repo-root imports.
+    from services.api.app.services.drawing_score_service import score_clock_drawing_payload
+
+try:
     import joblib
     import numpy as np
     from PIL import Image, ImageDraw
@@ -90,6 +95,23 @@ class DrawingTaskRequest(BaseModel):
     canvas_width: int = Field(default=320, gt=0)
     canvas_height: int = Field(default=320, gt=0)
     strokes: List[List[DrawingPoint]] = Field(default_factory=list)
+
+
+class ClockDrawingCanvasRequest(BaseModel):
+    width: float = 0
+    height: float = 0
+
+
+class ClockDrawingStrokeRequest(BaseModel):
+    points: List[dict] = Field(default_factory=list)
+
+
+class ClockDrawingScoreRequest(BaseModel):
+    task_id: str = "clock_drawing"
+    instruction: str = "Draw a clock showing 10 past 11."
+    canvas: ClockDrawingCanvasRequest = Field(default_factory=ClockDrawingCanvasRequest)
+    strokes: List[ClockDrawingStrokeRequest] = Field(default_factory=list)
+    metadata: dict = Field(default_factory=dict)
 
 
 class ScoreRequest(BaseModel):
@@ -333,6 +355,11 @@ def task_drawing(payload: DrawingTaskRequest) -> dict:
         "model_source": source,
         "disclaimer": DISCLAIMER,
     }
+
+
+@app.post("/task/drawing/score")
+def task_drawing_score(payload: ClockDrawingScoreRequest) -> dict:
+    return score_clock_drawing_payload(payload.model_dump())
 
 
 @app.post("/score")
