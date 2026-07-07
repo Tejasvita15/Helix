@@ -54,6 +54,11 @@ type DrawingStroke = {
   points: Point[];
 };
 
+type DrawingTaskPrompt = {
+  task_id: "clock_drawing";
+  instruction: string;
+};
+
 type DrawingScoreResult = {
   task: "clock_drawing";
   task_completed: boolean;
@@ -69,6 +74,7 @@ type DrawingScoreResult = {
 
 type DrawingScorePayload = {
   task_id: "clock_drawing";
+  session_id: string;
   instruction: string;
   canvas: {
     width: number;
@@ -94,7 +100,10 @@ type ChecklistKey =
 const DISCLAIMER =
   "This is not a diagnosis. Please discuss new or worsening concerns with a healthcare professional.";
 
-const CLOCK_DRAWING_INSTRUCTION = "Draw a clock showing 10 past 11.";
+const DEFAULT_DRAWING_TASK: DrawingTaskPrompt = {
+  task_id: "clock_drawing",
+  instruction: "Draw a clock shown by the prompt.",
+};
 const MIN_LOCAL_DRAWING_POINTS = 20;
 
 function getApiBaseUrl() {
@@ -346,6 +355,7 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>("welcome");
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [drawingTask, setDrawingTask] = useState<DrawingTaskPrompt>(DEFAULT_DRAWING_TASK);
   const [ageBand, setAgeBand] = useState("65-74");
   const [language, setLanguage] = useState("English");
   const [education, setEducation] = useState("Secondary");
@@ -425,13 +435,22 @@ export default function App() {
   const startSession = async () => {
     setLoading(true);
     try {
-      const response = await postJson<{ session_id: string }>("/session/start", {
+      const response = await postJson<{ session_id: string; drawing_task: DrawingTaskPrompt }>(
+        "/session/start",
+        {
         age_band: ageBand,
         preferred_language: language,
         education_band: education,
         caregiver_assisted: caregiverAssisted,
-      });
+        },
+      );
       setSessionId(response.session_id);
+      setDrawingTask(response.drawing_task);
+      setStrokes([]);
+      setClearCount(0);
+      setDrawingScoreResult(null);
+      setDrawingSubmitState("idle");
+      setDrawingError("");
       setScreen("checklist");
     } catch (error) {
       Alert.alert("Backend not reachable", `Start FastAPI at ${API_BASE_URL}, then try again.`);
@@ -483,7 +502,7 @@ export default function App() {
 
   const submitDrawing = async () => {
     if (!sessionId || strokes.length === 0) {
-      Alert.alert("Draw the clock first", "Please draw a clock showing 10 past 11.");
+      Alert.alert("Draw the clock first", drawingTask.instruction);
       return;
     }
     if (validDrawingPointCount() < MIN_LOCAL_DRAWING_POINTS) {
@@ -496,8 +515,9 @@ export default function App() {
     setDrawingError("");
     try {
       const drawingPayload: DrawingScorePayload = {
-        task_id: "clock_drawing",
-        instruction: CLOCK_DRAWING_INSTRUCTION,
+        task_id: drawingTask.task_id,
+        session_id: sessionId,
+        instruction: drawingTask.instruction,
         canvas: {
           width: canvasDimensions.width,
           height: canvasDimensions.height,
@@ -654,7 +674,7 @@ export default function App() {
 
   if (screen === "drawing") {
     return (
-      <ScreenShell title={CLOCK_DRAWING_INSTRUCTION} eyebrow="Step 4 of 5">
+      <ScreenShell title={drawingTask.instruction} eyebrow="Step 4 of 5">
         <View style={styles.canvasWrap}>
           <View
             style={styles.canvas}

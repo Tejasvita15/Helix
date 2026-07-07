@@ -19,11 +19,34 @@ for path in (ROOT_DIR, SERVICES_API_DIR):
 from app.main import app
 
 
-SAMPLE_PAYLOAD = {
-    "task_id": "clock_drawing",
-    "instruction": "Draw a clock showing 10 past 11.",
-    "canvas": {"width": 320, "height": 320},
-    "strokes": [
+def start_demo_session(client: TestClient) -> dict:
+    response = client.post(
+        "/session/start",
+        json={
+            "age_band": "65-74",
+            "preferred_language": "English",
+            "education_band": "Secondary",
+            "caregiver_assisted": True,
+        },
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def build_clock_payload(session: dict, strokes: list[dict] | None = None, canvas: dict | None = None) -> dict:
+    drawing_task = session["drawing_task"]
+    return {
+        "session_id": session["session_id"],
+        "task_id": drawing_task["task_id"],
+        "instruction": drawing_task["instruction"],
+        "canvas": canvas or {"width": 320, "height": 320},
+        "strokes": strokes if strokes is not None else complete_clock_strokes(),
+        "metadata": {"completion_time_ms": 42000, "clear_count": 1, "undo_count": 0, "device": "mobile"},
+    }
+
+
+def complete_clock_strokes() -> list[dict]:
+    return [
         {
             "points": [
                 {"x": 160, "y": 40, "t": 0},
@@ -47,15 +70,20 @@ SAMPLE_PAYLOAD = {
         {"points": [{"x": 270, "y": 156, "t": 360}, {"x": 282, "y": 156, "t": 376}]},
         {"points": [{"x": 156, "y": 274, "t": 400}, {"x": 164, "y": 274, "t": 416}]},
         {"points": [{"x": 42, "y": 156, "t": 440}, {"x": 54, "y": 156, "t": 456}]},
-    ],
-    "metadata": {"completion_time_ms": 42000, "clear_count": 1, "undo_count": 0, "device": "mobile"},
-}
+    ]
 
 
 def main() -> None:
     client = TestClient(app)
+    session = start_demo_session(client)
+    payload = build_clock_payload(session)
 
-    valid_response = client.post("/task/drawing/score", json=SAMPLE_PAYLOAD)
+    assert session["drawing_task"]["task_id"] == "clock_drawing"
+    assert session["drawing_task"]["instruction"].startswith("Draw a clock showing ")
+    next_session = start_demo_session(client)
+    assert next_session["drawing_task"]["instruction"] != session["drawing_task"]["instruction"]
+
+    valid_response = client.post("/task/drawing/score", json=payload)
     valid_response.raise_for_status()
     valid_payload = valid_response.json()
     assert valid_payload["task"] == "clock_drawing"
@@ -64,9 +92,9 @@ def main() -> None:
 
     two_point_response = client.post(
         "/task/drawing/score",
-        json={
-            **SAMPLE_PAYLOAD,
-            "strokes": [
+        json=build_clock_payload(
+            session,
+            strokes=[
                 {
                     "points": [
                         {"x": 100, "y": 120, "t": 0},
@@ -74,7 +102,7 @@ def main() -> None:
                     ]
                 }
             ],
-        },
+        ),
     )
     two_point_response.raise_for_status()
     two_point_payload = two_point_response.json()
@@ -84,7 +112,7 @@ def main() -> None:
 
     empty_response = client.post(
         "/task/drawing/score",
-        json={**SAMPLE_PAYLOAD, "strokes": []},
+        json=build_clock_payload(session, strokes=[]),
     )
     empty_response.raise_for_status()
     empty_payload = empty_response.json()
@@ -93,7 +121,7 @@ def main() -> None:
 
     invalid_canvas_response = client.post(
         "/task/drawing/score",
-        json={**SAMPLE_PAYLOAD, "canvas": {"width": 0, "height": 320}},
+        json=build_clock_payload(session, canvas={"width": 0, "height": 320}),
     )
     invalid_canvas_response.raise_for_status()
     invalid_canvas_payload = invalid_canvas_response.json()
@@ -105,7 +133,7 @@ def main() -> None:
         old_model_path = os.environ.get("CLOCK_SIGNAL_MODEL_PATH")
         os.environ["CLOCK_SIGNAL_MODEL_PATH"] = str(Path(temp_dir) / "missing.joblib")
         try:
-            missing_model_response = client.post("/task/drawing/score", json=SAMPLE_PAYLOAD)
+            missing_model_response = client.post("/task/drawing/score", json=payload)
             missing_model_response.raise_for_status()
             missing_model_payload = missing_model_response.json()
             assert missing_model_payload["task_completed"] is False

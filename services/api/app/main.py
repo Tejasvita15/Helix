@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from hashlib import sha256
 from pathlib import Path
 from time import time
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
 from fastapi import FastAPI
@@ -52,6 +53,16 @@ DISCLAIMER = (
 )
 
 SESSIONS: Dict[str, dict] = {}
+NEXT_DRAWING_TASK_INDEX = 0
+
+DRAWING_TASKS = [
+    {"task_id": "clock_drawing", "instruction": "Draw a clock showing 10 past 11."},
+    {"task_id": "clock_drawing", "instruction": "Draw a clock showing 20 past 8."},
+    {"task_id": "clock_drawing", "instruction": "Draw a clock showing 5 past 2."},
+    {"task_id": "clock_drawing", "instruction": "Draw a clock showing quarter past 9."},
+    {"task_id": "clock_drawing", "instruction": "Draw a clock showing 25 to 4."},
+    {"task_id": "clock_drawing", "instruction": "Draw a clock showing 10 to 7."},
+]
 
 
 class SessionStartRequest(BaseModel):
@@ -108,7 +119,8 @@ class ClockDrawingStrokeRequest(BaseModel):
 
 class ClockDrawingScoreRequest(BaseModel):
     task_id: str = "clock_drawing"
-    instruction: str = "Draw a clock showing 10 past 11."
+    session_id: Optional[str] = None
+    instruction: Optional[str] = None
     canvas: ClockDrawingCanvasRequest = Field(default_factory=ClockDrawingCanvasRequest)
     strokes: List[ClockDrawingStrokeRequest] = Field(default_factory=list)
     metadata: dict = Field(default_factory=dict)
@@ -126,6 +138,20 @@ def ensure_session(session_id: str) -> dict:
 
 def signal_payload(domain: str, band: str, score: int, reason: str) -> dict:
     return {"domain": domain, "band": band, "score": score, "reason": reason}
+
+
+def drawing_task_for_session(session_id: str) -> dict:
+    digest = sha256(session_id.encode("utf-8")).digest()
+    task = DRAWING_TASKS[int.from_bytes(digest[:2], "big") % len(DRAWING_TASKS)]
+    return dict(task)
+
+
+def next_drawing_task() -> dict:
+    global NEXT_DRAWING_TASK_INDEX
+
+    task = DRAWING_TASKS[NEXT_DRAWING_TASK_INDEX % len(DRAWING_TASKS)]
+    NEXT_DRAWING_TASK_INDEX += 1
+    return dict(task)
 
 
 def drawing_label_to_signal(label: str) -> dict:
@@ -309,14 +335,16 @@ def health() -> Dict[str, str]:
 
 
 @app.post("/session/start")
-def session_start(payload: SessionStartRequest) -> Dict[str, str]:
+def session_start(payload: SessionStartRequest) -> Dict[str, Any]:
     session_id = f"demo-{uuid4().hex[:10]}"
+    drawing_task = next_drawing_task()
     SESSIONS[session_id] = {
         "session_id": session_id,
         "created_at": time(),
         "profile": payload.model_dump(),
+        "drawing_task_prompt": drawing_task,
     }
-    return {"session_id": session_id}
+    return {"session_id": session_id, "drawing_task": drawing_task}
 
 
 @app.post("/caregiver-checklist")
@@ -359,7 +387,21 @@ def task_drawing(payload: DrawingTaskRequest) -> dict:
 
 @app.post("/task/drawing/score")
 def task_drawing_score(payload: ClockDrawingScoreRequest) -> dict:
-    return score_clock_drawing_payload(payload.model_dump())
+    payload_dict = payload.model_dump()
+    if payload.session_id:
+        session = ensure_session(payload.session_id)
+        drawing_task = session.get("drawing_task_prompt") or drawing_task_for_session(payload.session_id)
+        session["drawing_task_prompt"] = drawing_task
+        payload_dict["task_id"] = drawing_task["task_id"]
+        payload_dict["instruction"] = drawing_task["instruction"]
+    elif not payload_dict.get("instruction"):
+        payload_dict["instruction"] = DRAWING_TASKS[0]["instruction"]
+
+    result = score_clock_drawing_payload(payload_dict)
+    if payload.session_id:
+        session["drawing_score_payload"] = payload_dict
+        session["drawing_score_result"] = result
+    return result
 
 
 @app.post("/score")
