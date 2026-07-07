@@ -1,0 +1,297 @@
+{
+  "batch_size": 64,
+  "classes": [
+    "low_signal",
+    "medium_signal",
+    "higher_signal"
+  ],
+  "created_at_utc": "2026-07-07T12:31:17.426010+00:00",
+  "dataset_source": "research/drawing/cdt-api-network/clock_shulman.zip",
+  "device": "cuda",
+  "epochs": 30,
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 0.751447,
+      "validation": {
+        "accuracy": 0.731511,
+        "balanced_accuracy": 0.729347,
+        "macro_f1": 0.707424
+      }
+    },
+    {
+      "epoch": 2,
+      "train_loss": 0.334158,
+      "validation": {
+        "accuracy": 0.755627,
+        "balanced_accuracy": 0.746971,
+        "macro_f1": 0.721143
+      }
+    },
+    {
+      "epoch": 3,
+      "train_loss": 0.14223,
+      "validation": {
+        "accuracy": 0.802251,
+        "balanced_accuracy": 0.782343,
+        "macro_f1": 0.795756
+      }
+    },
+    {
+      "epoch": 4,
+      "train_loss": 0.06436,
+      "validation": {
+        "accuracy": 0.758842,
+        "balanced_accuracy": 0.746231,
+        "macro_f1": 0.753995
+      }
+    },
+    {
+      "epoch": 5,
+      "train_loss": 0.070766,
+      "validation": {
+        "accuracy": 0.787781,
+        "balanced_accuracy": 0.769181,
+        "macro_f1": 0.781684
+      }
+    },
+    {
+      "epoch": 6,
+      "train_loss": 0.035998,
+      "validation": {
+        "accuracy": 0.792605,
+        "balanced_accuracy": 0.770576,
+        "macro_f1": 0.786715
+      }
+    },
+    {
+      "epoch": 7,
+      "train_loss": 0.023767,
+      "validation": {
+        "accuracy": 0.786174,
+        "balanced_accuracy": 0.763665,
+        "macro_f1": 0.780239
+      }
+    },
+    {
+      "epoch": 8,
+      "train_loss": 0.019859,
+      "validation": {
+        "accuracy": 0.784566,
+        "balanced_accuracy": 0.760959,
+        "macro_f1": 0.775666
+      }
+    },
+    {
+      "epoch": 9,
+      "train_loss": 0.072715,
+      "validation": {
+        "accuracy": 0.729904,
+        "balanced_accuracy": 0.740685,
+        "macro_f1": 0.742039
+      }
+    },
+    {
+      "epoch": 10,
+      "train_loss": 0.043097,
+      "validation": {
+        "accuracy": 0.694534,
+        "balanced_accuracy": 0.722615,
+        "macro_f1": 0.706169
+      }
+    },
+    {
+      "epoch": 11,
+      "train_loss": 0.022372,
+      "validation": {
+        "accuracy": 0.789389,
+        "balanced_accuracy": 0.764034,
+        "macro_f1": 0.782728
+      }
+    },
+    {
+      "epoch": 12,
+      "train_loss": 0.013004,
+      "validation": {
+        "accuracy": 0.79582,
+        "balanced_accuracy": 0.775438,
+        "macro_f1": 0.791871
+      }
+    },
+    {
+      "epoch": 13,
+      "train_loss": 0.010945,
+      "validation": {
+        "accuracy": 0.790997,
+        "balanced_accuracy": 0.771237,
+        "macro_f1": 0.786663
+      }
+    },
+    {
+      "epoch": 14,
+      "train_loss": 0.009742,
+      "validation": {
+        "accuracy": 0.792605,
+        "balanced_accuracy": 0.768893,
+        "macro_f1": 0.781993
+      }
+    },
+    {
+      "epoch": 15,
+      "train_loss": 0.009347,
+      "validation": {
+        "accuracy": 0.792605,
+        "balanced_accuracy": 0.768329,
+        "macro_f1": 0.78156
+      }
+    },
+    {
+      "epoch": 16,
+      "train_loss": 0.008866,
+      "validation": {
+        "accuracy": 0.794212,
+        "balanced_accuracy": 0.769919,
+        "macro_f1": 0.784361
+      }
+    },
+    {
+      "epoch": 17,
+      "train_loss": 0.008864,
+      "validation": {
+        "accuracy": 0.729904,
+        "balanced_accuracy": 0.726664,
+        "macro_f1": 0.73747
+      }
+    },
+    {
+      "epoch": 18,
+      "train_loss": 0.117301,
+      "validation": {
+        "accuracy": 0.763666,
+        "balanced_accuracy": 0.71955,
+        "macro_f1": 0.734844
+      }
+    },
+    {
+      "epoch": 19,
+      "train_loss": 0.102803,
+      "validation": {
+        "accuracy": 0.750804,
+        "balanced_accuracy": 0.732096,
+        "macro_f1": 0.707919
+      }
+    },
+    {
+      "epoch": 20,
+      "train_loss": 0.048817,
+      "validation": {
+        "accuracy": 0.702572,
+        "balanced_accuracy": 0.732231,
+        "macro_f1": 0.714903
+      }
+    },
+    {
+      "epoch": 21,
+      "train_loss": 0.027853,
+      "validation": {
+        "accuracy": 0.763666,
+        "balanced_accuracy": 0.748177,
+        "macro_f1": 0.751071
+      }
+    },
+    {
+      "epoch": 22,
+      "train_loss": 0.013593,
+      "validation": {
+        "accuracy": 0.78135,
+        "balanced_accuracy": 0.760593,
+        "macro_f1": 0.774463
+      }
+    },
+    {
+      "epoch": 23,
+      "train_loss": 0.010687,
+      "validation": {
+        "accuracy": 0.770096,
+        "balanced_accuracy": 0.743306,
+        "macro_f1": 0.757136
+      }
+    },
+    {
+      "epoch": 24,
+      "train_loss": 0.009263,
+      "validation": {
+        "accuracy": 0.77492,
+        "balanced_accuracy": 0.749753,
+        "macro_f1": 0.763074
+      }
+    },
+    {
+      "epoch": 25,
+      "train_loss": 0.010293,
+      "validation": {
+        "accuracy": 0.778135,
+        "balanced_accuracy": 0.748429,
+        "macro_f1": 0.757335
+      }
+    },
+    {
+      "epoch": 26,
+      "train_loss": 0.008278,
+      "validation": {
+        "accuracy": 0.78135,
+        "balanced_accuracy": 0.748798,
+        "macro_f1": 0.756473
+      }
+    },
+    {
+      "epoch": 27,
+      "train_loss": 0.008327,
+      "validation": {
+        "accuracy": 0.782958,
+        "balanced_accuracy": 0.741975,
+        "macro_f1": 0.762904
+      }
+    },
+    {
+      "epoch": 28,
+      "train_loss": 0.008457,
+      "validation": {
+        "accuracy": 0.786174,
+        "balanced_accuracy": 0.754683,
+        "macro_f1": 0.766548
+      }
+    },
+    {
+      "epoch": 29,
+      "train_loss": 0.037778,
+      "validation": {
+        "accuracy": 0.733119,
+        "balanced_accuracy": 0.733753,
+        "macro_f1": 0.726954
+      }
+    },
+    {
+      "epoch": 30,
+      "train_loss": 0.084833,
+      "validation": {
+        "accuracy": 0.73955,
+        "balanced_accuracy": 0.692933,
+        "macro_f1": 0.705899
+      }
+    }
+  ],
+  "image_size": 224,
+  "intended_output": "Visual clock drawing signal only.",
+  "lr": 0.0001,
+  "model_name": "resnet18",
+  "model_type": "resnet18 transfer-learning CNN",
+  "scope_note": "This experimental CNN scores general clock drawing quality and does not validate prompt-specific hand time correctness.",
+  "seed": 42,
+  "split_metadata_path": "ml/drawing/clock_signal/experiments/cnn_baseline/artifacts/resnet18_split_metadata.json",
+  "weights_status": {
+    "pretrained_loaded": true,
+    "pretrained_requested": true,
+    "weights": "torchvision_pretrained_legacy"
+  }
+}
