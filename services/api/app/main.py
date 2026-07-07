@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from hashlib import sha256
 from pathlib import Path
+from statistics import mean
 from time import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 from uuid import uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
@@ -128,6 +129,48 @@ class ClockDrawingScoreRequest(BaseModel):
 
 class ScoreRequest(BaseModel):
     session_id: str
+
+
+class MemoryDevice(BaseModel):
+    platform: str | None = None
+    app_version: str | None = None
+
+
+class MemoryStudyItem(BaseModel):
+    person: str
+    item: str
+
+
+class MemoryQuestion(BaseModel):
+    question_id: str
+    type: Literal["person_for_item", "item_for_person", "not_shown_item"]
+    prompt: str
+    correct_answer: str
+    selected_answer: str | None = None
+    response_time_ms: int | None = Field(default=None, ge=0)
+
+
+class MemoryScoreRequest(BaseModel):
+    session_id: str
+    task_id: str = "hawker_memory_v1"
+    study_items: List[MemoryStudyItem]
+    questions: List[MemoryQuestion]
+    started_at: str | None = None
+    completed_at: str | None = None
+    device: MemoryDevice | None = None
+
+
+class MemoryScoreResponse(BaseModel):
+    task_id: str
+    score: int
+    max_score: int
+    accuracy: float
+    correct_count: int
+    incorrect_count: int
+    avg_response_time_ms: int | None
+    flags: List[str]
+    summary: str
+    domain: Literal["memory_recall"]
 
 
 def ensure_session(session_id: str) -> dict:
@@ -309,8 +352,18 @@ def combine_score(session: dict) -> dict:
         ),
     )
     caregiver = caregiver_signal(session.get("checklist"))
+    memory = session.get(
+        "memory_signal",
+        signal_payload(
+            "memory_recall",
+            "green",
+            80,
+            "Hawker Memory task has not been completed in this session.",
+        ),
+    )
     signals = {
         "language": voice,
+        "memory_recall": memory,
         "visuospatial_planning": drawing,
         "caregiver_concern": caregiver,
     }
@@ -401,6 +454,76 @@ def task_drawing_score(payload: ClockDrawingScoreRequest) -> dict:
     if payload.session_id:
         session["drawing_score_payload"] = payload_dict
         session["drawing_score_result"] = result
+    return result
+
+
+@app.post("/task/memory/score", response_model=MemoryScoreResponse)
+def score_memory_task(payload: MemoryScoreRequest) -> MemoryScoreResponse:
+    if payload.task_id != "hawker_memory_v1":
+        raise HTTPException(status_code=400, detail="Unsupported memory task_id.")
+
+    if not payload.questions:
+        raise HTTPException(status_code=400, detail="At least one recall question is required.")
+
+    correct_count = sum(
+        1
+        for question in payload.questions
+        if question.selected_answer == question.correct_answer
+    )
+    max_score = len(payload.questions)
+    incorrect_count = max_score - correct_count
+    accuracy = correct_count / max_score
+    response_times = [
+        question.response_time_ms
+        for question in payload.questions
+        if question.response_time_ms is not None
+    ]
+    avg_response_time_ms = round(mean(response_times)) if response_times else None
+    missed_associations = sum(
+        1
+        for question in payload.questions
+        if question.type != "not_shown_item"
+        and question.selected_answer != question.correct_answer
+    )
+    flags: List[str] = []
+
+    if accuracy < 0.6:
+        flags.append("low_accuracy")
+
+    if avg_response_time_ms is not None and avg_response_time_ms < 900:
+        flags.append("very_fast_responses")
+
+    if missed_associations >= 3:
+        flags.append("many_missed_associations")
+
+    if accuracy >= 0.8:
+        summary = "Good recall of the hawker orders."
+    elif accuracy >= 0.6:
+        summary = "Some hawker order details were recalled; a few associations were missed."
+    else:
+        summary = "Several hawker order associations were missed in this game."
+
+    result = MemoryScoreResponse(
+        task_id=payload.task_id,
+        score=correct_count,
+        max_score=max_score,
+        accuracy=accuracy,
+        correct_count=correct_count,
+        incorrect_count=incorrect_count,
+        avg_response_time_ms=avg_response_time_ms,
+        flags=flags,
+        summary=summary,
+        domain="memory_recall",
+    )
+    session = ensure_session(payload.session_id)
+    session["memory_task"] = payload.model_dump()
+    session["memory_score_result"] = result.model_dump()
+    session["memory_signal"] = signal_payload(
+        "memory_recall",
+        "green" if accuracy >= 0.6 else "amber",
+        round(accuracy * 100),
+        summary,
+    )
     return result
 
 

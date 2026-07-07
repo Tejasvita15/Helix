@@ -79,6 +79,32 @@ visuospatial_planning_score = 100
 - placement_penalty
 ```
 
+## Hawker Memory scoring
+
+MVP features:
+
+- `correct_count`
+- `incorrect_count`
+- `accuracy`
+- `avg_response_time_ms` if available
+- missed person-item associations
+
+Initial MVP scoring is rule-based:
+
+```text
+1 point per correct recall answer
+accuracy = correct_count / total_questions
+```
+
+Gentle task flags:
+
+- `low_accuracy`
+- `very_fast_responses`
+- `many_missed_associations`
+
+User-facing wording should describe this as a memory recall game, recall
+accuracy, or an associative memory pattern. It must not describe a diagnosis.
+
 ## Caregiver concern scoring
 
 High-signal concerns:

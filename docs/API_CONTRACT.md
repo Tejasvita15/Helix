@@ -207,6 +207,62 @@ Incomplete response example:
 }
 ```
 
+## POST /task/memory/score
+
+Scores the rule-based Hawker Memory delayed-recall game.
+
+Request:
+
+```json
+{
+  "session_id": "demo-session-001",
+  "task_id": "hawker_memory_v1",
+  "study_items": [
+    { "person": "Auntie Mei", "item": "Chicken Rice" },
+    { "person": "Mdm Lim", "item": "Laksa" }
+  ],
+  "questions": [
+    {
+      "question_id": "q1",
+      "type": "person_for_item",
+      "prompt": "Who ordered Laksa?",
+      "correct_answer": "Mdm Lim",
+      "selected_answer": "Mdm Lim",
+      "response_time_ms": 4300
+    }
+  ],
+  "started_at": "2026-07-07T10:00:00Z",
+  "completed_at": "2026-07-07T10:02:00Z",
+  "device": {
+    "platform": "ios",
+    "app_version": "0.1.0"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "task_id": "hawker_memory_v1",
+  "score": 1,
+  "max_score": 1,
+  "accuracy": 1.0,
+  "correct_count": 1,
+  "incorrect_count": 0,
+  "avg_response_time_ms": 4300,
+  "flags": [],
+  "summary": "Good recall of the hawker orders.",
+  "domain": "memory_recall"
+}
+```
+
+Flags are gentle, non-diagnostic task signals only:
+
+- `low_accuracy`
+- `very_fast_responses`
+- `many_missed_associations`
+
 ## POST /score
 
 Combines all available signals.
