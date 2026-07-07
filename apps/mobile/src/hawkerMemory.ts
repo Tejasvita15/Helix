@@ -51,6 +51,9 @@ export type HawkerMemoryTask = {
 };
 
 const TASK_ID = "hawker_memory_v1" as const;
+const DEFAULT_MEMORY_ORDER_COUNT = 4;
+const DEFAULT_MEMORY_QUESTION_COUNT = 3;
+const DEFAULT_MEMORY_OPTION_COUNT = 3;
 
 export type HawkerFoodSlug =
   | "chicken-rice"
@@ -270,14 +273,22 @@ function makeOptions(
   random: () => number,
 ): string[] {
   return shuffle(
-    [correctAnswer, ...takeDistractors(correctAnswer, candidates, random)],
+    [
+      correctAnswer,
+      ...takeDistractors(
+        correctAnswer,
+        candidates,
+        random,
+        DEFAULT_MEMORY_OPTION_COUNT - 1,
+      ),
+    ],
     random,
   );
 }
 
 export function createHawkerMemoryTask(seed = "demo-session-001"): HawkerMemoryTask {
   const random = seededRandom(seed);
-  const studyItems = shuffle(HAWKER_POOL, random).slice(0, 6);
+  const studyItems = shuffle(HAWKER_POOL, random).slice(0, DEFAULT_MEMORY_ORDER_COUNT);
   const unseenItems = HAWKER_POOL.filter(
     (poolItem) =>
       !studyItems.some((studyItem) => studyItem.item === poolItem.item),
@@ -311,7 +322,13 @@ export function createHawkerMemoryTask(seed = "demo-session-001"): HawkerMemoryT
       type: "not_shown_item",
       prompt: "Which item was not shown?",
       correctAnswer: distractorItem,
-      options: shuffle([distractorItem, ...shuffle(shownItems, random).slice(0, 3)], random),
+      options: shuffle(
+        [
+          distractorItem,
+          ...shuffle(shownItems, random).slice(0, DEFAULT_MEMORY_OPTION_COUNT - 1),
+        ],
+        random,
+      ),
       foodLabel: distractorVisual?.label,
       foodSlug: distractorVisual?.slug,
       foodEmoji: distractorVisual?.emoji,
@@ -340,7 +357,7 @@ export function createHawkerMemoryTask(seed = "demo-session-001"): HawkerMemoryT
   return {
     taskId: TASK_ID,
     studyItems,
-    questions: baseQuestions,
+    questions: baseQuestions.slice(0, DEFAULT_MEMORY_QUESTION_COUNT),
   };
 }
 

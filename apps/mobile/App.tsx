@@ -15,6 +15,7 @@ import {
   Switch,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 
@@ -120,7 +121,7 @@ const DEFAULT_DRAWING_TASK: DrawingTaskPrompt = {
   instruction: "Draw a clock shown by the prompt.",
 };
 const MIN_LOCAL_DRAWING_POINTS = 20;
-const MEMORY_STUDY_SECONDS = 25;
+const DEFAULT_MEMORY_STUDY_SECONDS = 20;
 
 function getApiBaseUrl() {
   if (Platform.OS === "web") {
@@ -392,14 +393,21 @@ function FoodVisual({
   emoji: string;
   image?: ImageSourcePropType;
   label: string;
-  size?: "small" | "large";
+  size?: "small" | "option" | "medium" | "large";
 }) {
+  const isOption = size === "option";
+  const isMedium = size === "medium";
   const isLarge = size === "large";
 
   return (
     <View
       accessibilityLabel={`${label} image`}
-      style={[styles.foodVisual, isLarge && styles.foodVisualLarge]}
+      style={[
+        styles.foodVisual,
+        isOption && styles.foodVisualOption,
+        isMedium && styles.foodVisualMedium,
+        isLarge && styles.foodVisualLarge,
+      ]}
     >
       {image ? (
         <Image
@@ -408,7 +416,16 @@ function FoodVisual({
           style={styles.foodImage}
         />
       ) : (
-        <Text style={[styles.foodEmoji, isLarge && styles.foodEmojiLarge]}>{emoji}</Text>
+        <Text
+          style={[
+            styles.foodEmoji,
+            isOption && styles.foodEmojiOption,
+            isMedium && styles.foodEmojiMedium,
+            isLarge && styles.foodEmojiLarge,
+          ]}
+        >
+          {emoji}
+        </Text>
       )}
     </View>
   );
@@ -422,6 +439,8 @@ function MemoryAnswerOption({
   onPress: () => void;
 }) {
   const foodVisual = getHawkerFoodVisual(label);
+  const { width: screenWidth } = useWindowDimensions();
+  const isCompactMemoryLayout = screenWidth < 390;
 
   return (
     <Pressable
@@ -437,6 +456,7 @@ function MemoryAnswerOption({
           emoji={foodVisual.emoji}
           image={foodVisual.image}
           label={foodVisual.label}
+          size={isCompactMemoryLayout ? "small" : "option"}
         />
       ) : (
         <View style={styles.personOptionIcon}>
@@ -449,6 +469,7 @@ function MemoryAnswerOption({
 }
 
 export default function App() {
+  const { width: screenWidth } = useWindowDimensions();
   const [screen, setScreen] = useState<Screen>("welcome");
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -473,7 +494,7 @@ export default function App() {
   const [memoryTask, setMemoryTask] = useState<HawkerMemoryTask>(() =>
     createHawkerMemoryTask("demo-session-001"),
   );
-  const [memoryCountdown, setMemoryCountdown] = useState(MEMORY_STUDY_SECONDS);
+  const [memoryCountdown, setMemoryCountdown] = useState(DEFAULT_MEMORY_STUDY_SECONDS);
   const [memoryAnswers, setMemoryAnswers] = useState<HawkerMemoryAnswer[]>([]);
   const [memoryQuestionIndex, setMemoryQuestionIndex] = useState(0);
   const [memoryQuestionStartedAt, setMemoryQuestionStartedAt] = useState<number | null>(null);
@@ -481,6 +502,8 @@ export default function App() {
   const [memoryCompletedAt, setMemoryCompletedAt] = useState<string | null>(null);
   const [memoryResult, setMemoryResult] = useState<HawkerMemoryResult | null>(null);
   const canvasSize = 320;
+  const isCompactMemoryLayout = screenWidth < 390;
+  const studyFoodVisualSize = isCompactMemoryLayout ? "medium" : "large";
   const currentMemoryQuestion = memoryTask.questions[memoryQuestionIndex];
   const memoryProgressText = `${Math.min(memoryQuestionIndex + 1, memoryTask.questions.length)} of ${memoryTask.questions.length}`;
 
@@ -555,7 +578,7 @@ export default function App() {
 
   const resetMemoryTask = (seed: string) => {
     setMemoryTask(createHawkerMemoryTask(seed));
-    setMemoryCountdown(MEMORY_STUDY_SECONDS);
+    setMemoryCountdown(DEFAULT_MEMORY_STUDY_SECONDS);
     setMemoryAnswers([]);
     setMemoryQuestionIndex(0);
     setMemoryQuestionStartedAt(null);
@@ -565,7 +588,7 @@ export default function App() {
   };
 
   const startMemoryStudy = () => {
-    setMemoryCountdown(MEMORY_STUDY_SECONDS);
+    setMemoryCountdown(DEFAULT_MEMORY_STUDY_SECONDS);
     setMemoryAnswers([]);
     setMemoryQuestionIndex(0);
     setMemoryQuestionStartedAt(null);
@@ -835,13 +858,14 @@ export default function App() {
     return (
       <ScreenShell title="Hawker Memory" eyebrow="Step 3 of 6">
         <Text style={styles.body}>
-          Remember these hawker orders. You will be asked about them later.
+          Remember these hawker orders. You will see a few orders now. After one
+          short picture task, we will ask you to recall them.
         </Text>
         <View style={styles.signalCard}>
           <Text style={styles.pictureTitle}>Memory recall game</Text>
           <Text style={styles.signalReason}>
-            Study the orders at a comfortable pace. A short picture story task
-            comes next, then the recall questions.
+            Study the orders at a comfortable pace. The next task gives a short
+            pause before the recall questions.
           </Text>
         </View>
         <PrimaryButton label="Show orders" onPress={startMemoryStudy} />
@@ -866,15 +890,20 @@ export default function App() {
                 emoji={studyItem.emoji}
                 image={studyItem.image}
                 label={studyItem.item}
-                size="large"
+                size={studyFoodVisualSize}
               />
               <View style={styles.memoryOrderText}>
-                <Text style={styles.signalDomain}>{studyItem.person}</Text>
                 <Text style={styles.memoryFoodLabel}>{studyItem.item}</Text>
+                <Text style={styles.memoryPersonLabel}>{studyItem.person}</Text>
               </View>
             </View>
           ))}
         </View>
+        {memoryCountdown === 0 ? (
+          <Text style={styles.memoryReadyText}>
+            Great. We will ask about the orders shortly.
+          </Text>
+        ) : null}
         <PrimaryButton
           disabled={memoryCountdown > 0}
           label={memoryCountdown > 0 ? "Study the orders" : "Continue to picture story"}
@@ -894,9 +923,9 @@ export default function App() {
           </Text>
         </View>
         <Text style={styles.body}>
-          Tell us what is happening in this picture. For this MVP demo, the app sends safe mock
-          speech metadata instead of storing an audio recording. This also gives a short pause
-          before the Hawker Memory recall.
+          Tell us what is happening in this picture. After this, we will ask
+          about the hawker orders. For this MVP demo, the app sends safe mock
+          speech metadata instead of storing an audio recording.
         </Text>
         <PrimaryButton
           label={loading ? "Saving..." : "Use demo voice sample"}
@@ -918,7 +947,8 @@ export default function App() {
     }
 
     return (
-      <ScreenShell title="Recall" eyebrow={`Question ${memoryProgressText}`}>
+      <ScreenShell title="Now let's recall the hawker orders" eyebrow={`Question ${memoryProgressText}`}>
+        <Text style={styles.body}>Choose the answer you remember best.</Text>
         <Text style={styles.memoryQuestion}>{currentMemoryQuestion.prompt}</Text>
         {currentMemoryQuestion.foodLabel ? (
           <View style={styles.memoryPromptCard}>
@@ -926,7 +956,7 @@ export default function App() {
               emoji={currentMemoryQuestion.foodEmoji ?? "🍽️"}
               image={currentMemoryQuestion.foodImage}
               label={currentMemoryQuestion.foodLabel}
-              size="large"
+              size={studyFoodVisualSize}
             />
             <Text style={styles.memoryFoodLabel}>
               {currentMemoryQuestion.foodLabel}
@@ -1215,25 +1245,40 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   memoryOrderCard: {
-    minHeight: 96,
+    minHeight: 124,
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    gap: 16,
     borderWidth: 1,
     borderColor: "#e5e7eb",
     borderRadius: 8,
     backgroundColor: "#ffffff",
-    padding: 14,
+    padding: 12,
   },
   memoryOrderText: {
     flex: 1,
   },
+  memoryReadyText: {
+    marginBottom: 2,
+    color: "#0f766e",
+    fontSize: 15,
+    fontWeight: "800",
+    lineHeight: 21,
+  },
   memoryFoodLabel: {
     flex: 1,
-    color: "#374151",
-    fontSize: 19,
-    fontWeight: "700",
-    lineHeight: 26,
+    color: "#111827",
+    fontSize: 21,
+    fontWeight: "800",
+    lineHeight: 28,
+    letterSpacing: 0,
+  },
+  memoryPersonLabel: {
+    marginTop: 4,
+    color: "#57534e",
+    fontSize: 15,
+    fontWeight: "800",
+    lineHeight: 21,
     letterSpacing: 0,
   },
   memoryQuestion: {
@@ -1245,30 +1290,30 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
   },
   memoryPromptCard: {
-    minHeight: 96,
+    minHeight: 124,
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    gap: 16,
     marginBottom: 16,
     borderWidth: 1,
     borderColor: "#e5e7eb",
     borderRadius: 8,
     backgroundColor: "#ffffff",
-    padding: 14,
+    padding: 12,
   },
   memoryOptionList: {
     gap: 12,
   },
   memoryOption: {
-    minHeight: 64,
+    minHeight: 78,
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 14,
     borderWidth: 1,
     borderColor: "#d6d3d1",
     borderRadius: 8,
     backgroundColor: "#ffffff",
-    padding: 14,
+    padding: 12,
   },
   memoryOptionPressed: {
     borderColor: "#0f766e",
@@ -1283,8 +1328,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
   },
   foodVisual: {
-    width: 54,
-    height: 54,
+    width: 64,
+    height: 64,
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
@@ -1293,20 +1338,34 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: "#f7f7f2",
   },
+  foodVisualOption: {
+    width: 84,
+    height: 84,
+  },
+  foodVisualMedium: {
+    width: 92,
+    height: 92,
+  },
   foodVisualLarge: {
-    width: 76,
-    height: 76,
+    width: 108,
+    height: 108,
   },
   foodImage: {
     width: "100%",
     height: "100%",
   },
   foodEmoji: {
-    fontSize: 28,
+    fontSize: 32,
     letterSpacing: 0,
   },
-  foodEmojiLarge: {
+  foodEmojiOption: {
     fontSize: 40,
+  },
+  foodEmojiMedium: {
+    fontSize: 44,
+  },
+  foodEmojiLarge: {
+    fontSize: 48,
   },
   personOptionIcon: {
     width: 46,
