@@ -456,7 +456,7 @@ function MemoryAnswerOption({
           emoji={foodVisual.emoji}
           image={foodVisual.image}
           label={foodVisual.label}
-          size={isCompactMemoryLayout ? "small" : "option"}
+          size={isCompactMemoryLayout ? "option" : "medium"}
         />
       ) : (
         <View style={styles.personOptionIcon}>
@@ -1245,10 +1245,10 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   memoryOrderCard: {
-    minHeight: 124,
+    minHeight: 144,
     flexDirection: "row",
     alignItems: "center",
-    gap: 16,
+    gap: 18,
     borderWidth: 1,
     borderColor: "#e5e7eb",
     borderRadius: 8,
@@ -1290,10 +1290,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
   },
   memoryPromptCard: {
-    minHeight: 124,
+    minHeight: 144,
     flexDirection: "row",
     alignItems: "center",
-    gap: 16,
+    gap: 18,
     marginBottom: 16,
     borderWidth: 1,
     borderColor: "#e5e7eb",
@@ -1305,7 +1305,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   memoryOption: {
-    minHeight: 78,
+    minHeight: 96,
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
@@ -1328,8 +1328,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
   },
   foodVisual: {
-    width: 64,
-    height: 64,
+    width: 72,
+    height: 72,
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
@@ -1339,33 +1339,33 @@ const styles = StyleSheet.create({
     backgroundColor: "#f7f7f2",
   },
   foodVisualOption: {
-    width: 84,
-    height: 84,
-  },
-  foodVisualMedium: {
     width: 92,
     height: 92,
   },
+  foodVisualMedium: {
+    width: 112,
+    height: 112,
+  },
   foodVisualLarge: {
-    width: 108,
-    height: 108,
+    width: 128,
+    height: 128,
   },
   foodImage: {
     width: "100%",
     height: "100%",
   },
   foodEmoji: {
-    fontSize: 32,
+    fontSize: 36,
     letterSpacing: 0,
   },
   foodEmojiOption: {
-    fontSize: 40,
-  },
-  foodEmojiMedium: {
     fontSize: 44,
   },
+  foodEmojiMedium: {
+    fontSize: 52,
+  },
   foodEmojiLarge: {
-    fontSize: 48,
+    fontSize: 60,
   },
   personOptionIcon: {
     width: 46,
