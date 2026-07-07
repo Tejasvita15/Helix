@@ -6,6 +6,10 @@ Drawing Test visual signal scoring.
 It is separate from the stable demo scorer in `ml/drawing/clock_signal/` and is
 not wired into `services/api` or `apps/mobile`.
 
+DenseNet121 is currently the stronger experimental CNN baseline from the
+cluster runs. The backend still uses the HOG/logistic scorer unless that is
+explicitly changed in a later task.
+
 ## Scope
 
 The model predicts general clock drawing quality signals only:
@@ -99,6 +103,48 @@ python -m ml.drawing.clock_signal.experiments.cnn_baseline.predict_cnn \
 The prediction output is JSON-compatible and remains limited to drawing-task
 signals. It is for experimental review only and should not be used for care
 decisions.
+
+## Product-Shaped CNN Inference
+
+`cnn_scorer.py` provides a reusable experimental adapter:
+
+```python
+from ml.drawing.clock_signal.experiments.cnn_baseline.cnn_scorer import score_cnn_image
+
+result = score_cnn_image(
+    "path/to/rendered_clock.png",
+    model_path="ml/drawing/clock_signal/experiments/cnn_baseline/artifacts/densenet121_clock_cnn.pt",
+    model_info_path="ml/drawing/clock_signal/experiments/cnn_baseline/artifacts/densenet121_model_info.json",
+    threshold=0.60,
+)
+```
+
+The adapter reconstructs supported torchvision architectures without internet
+downloads and returns the same product-facing shape used by the drawing scorer.
+It remains experimental and is not connected to the backend endpoint.
+
+## Mobile-Rendered Audit
+
+Before replacing the backend HOG/logistic model, run the CNN against
+mobile-rendered debug images and compare outputs:
+
+```bash
+python -m ml.drawing.clock_signal.experiments.cnn_baseline.audit_mobile_rendered \
+  --images-dir /tmp/mindtrail_clock_renders \
+  --cnn-model-path ml/drawing/clock_signal/experiments/cnn_baseline/artifacts/densenet121_clock_cnn.pt \
+  --cnn-model-info ml/drawing/clock_signal/experiments/cnn_baseline/artifacts/densenet121_model_info.json \
+  --hog-model-path ml/drawing/clock_signal/artifacts/clock_signal_baseline.joblib \
+  --output-dir ml/drawing/clock_signal/experiments/cnn_baseline/artifacts/mobile_audit \
+  --threshold 0.60
+```
+
+The audit writes:
+
+- `mobile_rendered_audit.csv`
+- `mobile_rendered_audit_summary.json`
+
+If no rendered images are available yet, the script writes an empty summary and
+prints a clear rerun message instead of failing.
 
 ## Limitations
 
