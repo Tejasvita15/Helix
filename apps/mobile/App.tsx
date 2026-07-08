@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Image,
   ImageSourcePropType,
+  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -23,6 +24,34 @@ type StoryPicture = {
   title: string;
   image: ImageSourcePropType;
 };
+
+type VoiceTaskPayload = {
+  session_id: string;
+  picture_id: string;
+  duration_sec: number;
+  pause_count: number;
+  long_pause_count: number;
+  estimated_word_count: number;
+  transcript: string;
+  audio_uri: string | null;
+  audio_blob?: Blob;
+  model_name: string;
+};
+
+type WebRecordingState = {
+  audioContext: AudioContext;
+  processor: ScriptProcessorNode;
+  source: MediaStreamAudioSourceNode;
+  stream: MediaStream;
+  chunks: Float32Array[];
+  sampleRate: number;
+};
+
+declare global {
+  interface Window {
+    webkitAudioContext?: typeof AudioContext;
+  }
+}
 
 type VoicePrediction = {
   saved: boolean;
@@ -64,15 +93,41 @@ const STORY_PICTURES: StoryPicture[] = [
     title: "Lunch at the hawker centre",
     image: require("./assets/picture-story/hawker-lunch-mobile.png"),
   },
+  {
+    id: "clinic-waiting",
+    title: "Clinic appointment",
+    image: require("./assets/picture-story/clinic-waiting-mobile.png"),
+  },
+  {
+    id: "void-deck-exercise",
+    title: "Morning exercise",
+    image: require("./assets/picture-story/void-deck-exercise-mobile.png"),
+  },
+  {
+    id: "wet-market",
+    title: "Market shopping",
+    image: require("./assets/picture-story/wet-market-mobile.png"),
+  },
+  {
+    id: "commute-station",
+    title: "Public transport errand",
+    image: require("./assets/picture-story/commute-station-mobile.png"),
+  },
 ];
 
 const DISCLAIMER =
   "This is not a diagnosis. Please discuss new or worsening concerns with a healthcare professional.";
 
+let activeWebRecording: WebRecordingState | null = null;
+
+function getRandomStoryPicture(): StoryPicture {
+  return STORY_PICTURES[Math.floor(Math.random() * STORY_PICTURES.length)];
+}
+
 export default function App() {
   const { width } = useWindowDimensions();
   const [selectedPicture, setSelectedPicture] = useState<StoryPicture>(
-    STORY_PICTURES[0],
+    getRandomStoryPicture,
   );
   const [isRecording, setIsRecording] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -82,7 +137,7 @@ export default function App() {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
   const startedAtRef = useRef<number | null>(null);
-  const selectedPictureRef = useRef<StoryPicture>(STORY_PICTURES[0]);
+  const selectedPictureRef = useRef<StoryPicture>(selectedPicture);
   const isCompact = width < 430;
   const horizontalPadding = isCompact ? 14 : 20;
   const contentWidth = Math.min(width - horizontalPadding * 2, 720);
@@ -110,28 +165,19 @@ export default function App() {
       if (recordingRef.current) {
         void recordingRef.current.stopAndUnloadAsync();
       }
+      void stopWebRecording();
     };
   }, []);
 
   async function startTask() {
-    const randomPicture =
-      STORY_PICTURES[Math.floor(Math.random() * STORY_PICTURES.length)];
+    const randomPicture = getRandomStoryPicture();
 
     try {
-      const permission = await Audio.requestPermissionsAsync();
-      if (!permission.granted) {
-        setErrorMessage("Microphone permission is needed to record the voice task.");
-        return;
+      const recording =
+        Platform.OS === "web" ? null : await startNativeRecording();
+      if (Platform.OS === "web") {
+        await startWebRecording();
       }
-
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY,
-      );
 
       setSelectedPicture(randomPicture);
       selectedPictureRef.current = randomPicture;
@@ -154,7 +200,10 @@ export default function App() {
   }
 
   async function stopTask(endReason: "manual" | "auto") {
-    if (!recordingRef.current || startedAtRef.current === null) {
+    if (
+      (!recordingRef.current && !activeWebRecording) ||
+      startedAtRef.current === null
+    ) {
       return;
     }
 
@@ -169,9 +218,15 @@ export default function App() {
     setStatusText(endReason === "auto" ? "Time limit reached" : "Stopped by physician");
 
     let audioUri: string | null = null;
+    let audioBlob: Blob | undefined;
     try {
-      await recording.stopAndUnloadAsync();
-      audioUri = recording.getURI();
+      if (Platform.OS === "web") {
+        audioBlob = await stopWebRecording();
+        audioUri = audioBlob ? "browser-recording.wav" : null;
+      } else if (recording) {
+        await recording.stopAndUnloadAsync();
+        audioUri = recording.getURI();
+      }
     } catch (error) {
       setErrorMessage("Recording stopped, but the audio file could not be finalized.");
     }
@@ -184,23 +239,12 @@ export default function App() {
       selectedPictureRef.current.id,
       durationSec,
       audioUri,
+      audioBlob,
     );
     startedAtRef.current = null;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/task/voice`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        throw new Error(`API returned ${response.status}`);
-      }
-
-      const json = (await response.json()) as VoicePrediction;
+      const json = await submitVoiceTask(payload);
       setPrediction(json);
       setStatusText("Prediction ready");
     } catch (error) {
@@ -314,28 +358,23 @@ function buildDemoVoicePayload(
   pictureId: string,
   durationSec: number,
   audioUri: string | null,
-) {
-  const estimatedWordCount = Math.max(8, Math.round(durationSec * 1.35));
-  const pauseCount = Math.max(1, Math.round(durationSec / 12));
-  const longPauseCount = Math.max(0, Math.round(durationSec / 45));
-
+  audioBlob?: Blob,
+): VoiceTaskPayload {
   return {
     session_id: "demo-session-001",
     picture_id: pictureId,
     duration_sec: durationSec,
-    pause_count: pauseCount,
-    long_pause_count: longPauseCount,
-    estimated_word_count: estimatedWordCount,
-    transcript:
-      "The person describes a family in an everyday Singapore scene with objects, actions, and relationships.",
+    pause_count: 0,
+    long_pause_count: 0,
+    estimated_word_count: 0,
+    transcript: "",
     audio_uri: audioUri,
+    audio_blob: audioBlob,
     model_name: "Auralis/NatHACKS_Auralis",
   };
 }
 
-function buildLocalPrediction(
-  payload: ReturnType<typeof buildDemoVoicePayload>,
-): VoicePrediction {
+function buildLocalPrediction(payload: VoiceTaskPayload): VoicePrediction {
   const speechRate =
     payload.duration_sec > 0
       ? Math.round(payload.estimated_word_count / (payload.duration_sec / 60))
@@ -374,6 +413,165 @@ function buildLocalPrediction(
       disclaimer: DISCLAIMER,
     },
   };
+}
+
+async function submitVoiceTask(payload: VoiceTaskPayload): Promise<VoicePrediction> {
+  if (payload.audio_uri || payload.audio_blob) {
+    try {
+      const formData = new FormData();
+      formData.append("session_id", payload.session_id);
+      formData.append("picture_id", payload.picture_id);
+
+      if (payload.audio_blob) {
+        formData.append("file", payload.audio_blob, "voice-task.wav");
+      } else if (payload.audio_uri?.startsWith("blob:")) {
+        const audioResponse = await fetch(payload.audio_uri);
+        const audioBlob = await audioResponse.blob();
+        formData.append("file", audioBlob, "voice-task.webm");
+      } else {
+        formData.append(
+          "file",
+          {
+            uri: payload.audio_uri,
+            name: "voice-task.m4a",
+            type: "audio/m4a",
+          } as unknown as Blob,
+        );
+      }
+
+      const audioResponse = await fetch(`${API_BASE_URL}/task/voice/audio`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (audioResponse.ok) {
+        return (await audioResponse.json()) as VoicePrediction;
+      }
+    } catch (error) {
+      // Fall through to the metadata endpoint so the demo remains usable.
+    }
+  }
+
+  const response = await fetch(`${API_BASE_URL}/task/voice`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`API returned ${response.status}`);
+  }
+
+  return (await response.json()) as VoicePrediction;
+}
+
+async function startNativeRecording(): Promise<Audio.Recording> {
+  const permission = await Audio.requestPermissionsAsync();
+  if (!permission.granted) {
+    throw new Error("Microphone permission denied.");
+  }
+
+  await Audio.setAudioModeAsync({
+    allowsRecordingIOS: true,
+    playsInSilentModeIOS: true,
+  });
+
+  const { recording } = await Audio.Recording.createAsync(
+    Audio.RecordingOptionsPresets.HIGH_QUALITY,
+  );
+  return recording;
+}
+
+async function startWebRecording(): Promise<void> {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error("Browser microphone recording is not supported.");
+  }
+
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  const audioContext = new AudioContextCtor();
+  const source = audioContext.createMediaStreamSource(stream);
+  const processor = audioContext.createScriptProcessor(4096, 1, 1);
+  const chunks: Float32Array[] = [];
+
+  processor.onaudioprocess = (event) => {
+    chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+  };
+
+  source.connect(processor);
+  processor.connect(audioContext.destination);
+
+  activeWebRecording = {
+    audioContext,
+    processor,
+    source,
+    stream,
+    chunks,
+    sampleRate: audioContext.sampleRate,
+  };
+}
+
+async function stopWebRecording(): Promise<Blob | undefined> {
+  const recording = activeWebRecording;
+  if (!recording) {
+    return undefined;
+  }
+
+  activeWebRecording = null;
+  recording.processor.disconnect();
+  recording.source.disconnect();
+  recording.stream.getTracks().forEach((track: MediaStreamTrack) => track.stop());
+  await recording.audioContext.close();
+
+  const samples = mergeAudioChunks(recording.chunks);
+  return encodeWav(samples, recording.sampleRate);
+}
+
+function mergeAudioChunks(chunks: Float32Array[]): Float32Array {
+  const length = chunks.reduce((total, chunk) => total + chunk.length, 0);
+  const result = new Float32Array(length);
+  let offset = 0;
+  chunks.forEach((chunk) => {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  });
+  return result;
+}
+
+function encodeWav(samples: Float32Array, sampleRate: number): Blob {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+
+  writeAscii(view, 0, "RIFF");
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeAscii(view, 8, "WAVE");
+  writeAscii(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeAscii(view, 36, "data");
+  view.setUint32(40, samples.length * 2, true);
+
+  let offset = 44;
+  for (let index = 0; index < samples.length; index += 1) {
+    const sample = Math.max(-1, Math.min(1, samples[index]));
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    offset += 2;
+  }
+
+  return new Blob([view], { type: "audio/wav" });
+}
+
+function writeAscii(view: DataView, offset: number, text: string) {
+  for (let index = 0; index < text.length; index += 1) {
+    view.setUint8(offset + index, text.charCodeAt(index));
+  }
 }
 
 const styles = StyleSheet.create({

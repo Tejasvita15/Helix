@@ -1,11 +1,17 @@
 from datetime import UTC, datetime
 from html import escape
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
+
+from app.auralis_model import MODEL_ID, get_auralis_model
+from app.whisper_service import WHISPER_MODEL_SIZE, get_whisper_transcriber, transcribe_upload
 
 app = FastAPI(
     title="MindTrail SG API",
@@ -14,6 +20,19 @@ app = FastAPI(
         "This is not a diagnosis."
     ),
     version="0.1.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:8081",
+        "http://127.0.0.1:8081",
+        "http://localhost:8082",
+        "http://127.0.0.1:8082",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 Band = Literal["green", "amber", "red"]
@@ -73,6 +92,20 @@ class VoiceTaskResponse(BaseModel):
     saved: bool
     voice_signal: DomainSignal
     prediction: dict[str, object]
+
+
+class ModelStatusResponse(BaseModel):
+    model: str
+    loaded: bool
+    device: str | None = None
+    labels: dict[int, str] | None = None
+    warning: str | None = None
+
+
+class WhisperStatusResponse(BaseModel):
+    model: str
+    loaded: bool
+    warning: str | None = None
 
 
 class ScoreRequest(BaseModel):
@@ -136,6 +169,82 @@ def voice_task(payload: VoiceTaskRequest) -> VoiceTaskResponse:
     response = VoiceTaskResponse(saved=True, voice_signal=signal, prediction=prediction)
     VOICE_TASKS[payload.session_id] = response
     return response
+
+
+@app.post("/task/voice/audio")
+async def voice_task_audio(
+    session_id: str = "demo-session-001",
+    picture_id: str = "demo-picture",
+    file: UploadFile = File(...),
+) -> VoiceTaskResponse:
+    content = await file.read()
+    raw_prediction = await predict_audio_bytes(content, file.filename)
+    transcription = await transcribe_audio_bytes(content, file.filename)
+    signal = signal_from_auralis(raw_prediction)
+    prediction = {
+        "model": MODEL_ID,
+        "task": "picture_story_voice",
+        "picture_id": picture_id,
+        "language_domain_score": signal.score,
+        "band": signal.band,
+        "risk_signal": signal.band,
+        "raw_model_output": raw_prediction,
+        "transcription": transcription,
+        "clinical_claim": "possible language-domain signal only",
+        "disclaimer": signal.disclaimer,
+    }
+    response = VoiceTaskResponse(saved=True, voice_signal=signal, prediction=prediction)
+    VOICE_TASKS[session_id] = response
+    return response
+
+
+@app.post("/transcribe/whisper")
+async def transcribe_whisper(file: UploadFile = File(...)) -> dict[str, object]:
+    return await transcribe_upload(file)
+
+
+@app.get("/model/auralis/status")
+def auralis_status() -> ModelStatusResponse:
+    try:
+        model = get_auralis_model()
+    except Exception as exc:
+        return ModelStatusResponse(
+            model=MODEL_ID,
+            loaded=False,
+            warning=str(exc),
+        )
+
+    return ModelStatusResponse(
+        model=MODEL_ID,
+        loaded=True,
+        device=str(model.device),
+        labels=model.config.id2label,
+        warning=(
+            "Model output is a research signal only. It is not a diagnosis and "
+            "has not been locally clinically validated for MindTrail SG."
+        ),
+    )
+
+
+@app.get("/model/whisper/status")
+def whisper_status() -> WhisperStatusResponse:
+    try:
+        get_whisper_transcriber()
+    except Exception as exc:
+        return WhisperStatusResponse(
+            model=f"faster-whisper/{WHISPER_MODEL_SIZE}",
+            loaded=False,
+            warning=str(exc),
+        )
+
+    return WhisperStatusResponse(
+        model=f"faster-whisper/{WHISPER_MODEL_SIZE}",
+        loaded=True,
+        warning=(
+            "Whisper transcription is approximate and should be reviewed before "
+            "clinical or caregiver use."
+        ),
+    )
 
 
 @app.post("/task/drawing")
@@ -246,6 +355,78 @@ def score_voice_task(payload: VoiceTaskRequest) -> DomainSignal:
         score=score,
         reason=reason,
         model=payload.model_name,
+    )
+
+
+async def predict_audio_bytes(
+    content: bytes,
+    filename: str | None,
+) -> dict[str, object]:
+    suffix = Path(filename or "audio.wav").suffix or ".wav"
+    with NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+        temp_file.write(content)
+        temp_path = Path(temp_file.name)
+
+    try:
+        return get_auralis_model().predict_path(temp_path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+async def transcribe_audio_bytes(
+    content: bytes,
+    filename: str | None,
+) -> dict[str, object]:
+    suffix = Path(filename or "audio.wav").suffix or ".wav"
+    with NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+        temp_file.write(content)
+        temp_path = Path(temp_file.name)
+
+    try:
+        return get_whisper_transcriber().transcribe_path(temp_path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def signal_from_auralis(raw_prediction: dict[str, object]) -> DomainSignal:
+    audio_quality = raw_prediction.get("audio_quality")
+    if (
+        isinstance(audio_quality, dict)
+        and audio_quality.get("is_silent") is True
+    ):
+        return DomainSignal(
+            domain="language",
+            band="amber",
+            score=50,
+            reason=(
+                "No usable speech was detected in the recording, so the "
+                "Auralis model was not used for a cognitive-risk signal. "
+                "Please retry with audible speech if this was unintentional."
+            ),
+            model=MODEL_ID,
+        )
+
+    scores = raw_prediction.get("scores", [])
+    dementia_score = 0.0
+    if isinstance(scores, list):
+        for item in scores:
+            if isinstance(item, dict) and item.get("label") == "dementia":
+                dementia_score = float(item.get("score", 0.0))
+                break
+
+    score = round((1 - dementia_score) * 100)
+    band = band_for_score(score)
+    reason = (
+        "Auralis/NatHACKS_Auralis returned an audio-classification research "
+        f"signal with raw dementia-label probability {dementia_score:.2f}. "
+        "Use this only as a possible language-domain signal."
+    )
+    return DomainSignal(
+        domain="language",
+        band=band,
+        score=score,
+        reason=reason,
+        model=MODEL_ID,
     )
 
 

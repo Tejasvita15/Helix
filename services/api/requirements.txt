@@ -1,2 +1,9 @@
 fastapi==0.111.1
 uvicorn[standard]==0.30.3
+torch==2.12.1
+transformers==4.46.2
+tokenizers==0.20.3
+safetensors==0.8.0
+soundfile==0.14.0
+librosa==0.11.0
+faster-whisper==1.1.1
