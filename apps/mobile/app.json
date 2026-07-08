@@ -7,7 +7,13 @@
     "userInterfaceStyle": "light",
     "assetBundlePatterns": ["**/*"],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "MindTrail SG records your voice for the Picture Story Voice task."
+      }
+    },
+    "android": {
+      "permissions": ["RECORD_AUDIO"]
     },
     "web": {
       "bundler": "metro"

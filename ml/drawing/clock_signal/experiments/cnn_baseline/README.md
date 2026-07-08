@@ -123,6 +123,23 @@ The adapter reconstructs supported torchvision architectures without internet
 downloads and returns the same product-facing shape used by the drawing scorer.
 It remains experimental and is not connected to the backend endpoint.
 
+## Optional Backend Use
+
+The FastAPI drawing scorer can run this CNN experiment only when explicitly
+enabled. The default backend scorer remains the stable HOG/logistic baseline.
+
+```bash
+CLOCK_DRAWING_SCORER=cnn \
+CLOCK_CNN_MODEL_PATH=ml/drawing/clock_signal/experiments/cnn_baseline/artifacts/densenet121_clock_cnn.pt \
+CLOCK_CNN_MODEL_INFO_PATH=ml/drawing/clock_signal/experiments/cnn_baseline/artifacts/densenet121_model_info.json \
+CLOCK_CNN_DEVICE=cpu \
+uvicorn app.main:app --reload
+```
+
+If PyTorch, torchvision, or the checkpoint file is missing, the API returns a
+safe `uncertain` result instead of crashing. Keep the endpoint language limited
+to risk signals; this is not a diagnosis.
+
 ## Mobile-Rendered Audit
 
 Before replacing the backend HOG/logistic model, run the CNN against

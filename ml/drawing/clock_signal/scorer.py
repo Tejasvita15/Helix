@@ -14,7 +14,10 @@ try:
     from .features import extract_hog_features_from_bytes, extract_hog_features_from_path
     from .labels import HIGHER_SIGNAL, LOW_SIGNAL, MEDIUM_SIGNAL, SIGNAL_TEXT, UNCERTAIN_SIGNAL
     from .schemas import ClockDrawingMetadata, ClockScoreResult
-except ImportError:  # pragma: no cover - supports direct script execution.
+except ImportError:
+    if __package__:
+        raise
+    # pragma: no cover - supports direct script execution.
     from features import extract_hog_features_from_bytes, extract_hog_features_from_path
     from labels import HIGHER_SIGNAL, LOW_SIGNAL, MEDIUM_SIGNAL, SIGNAL_TEXT, UNCERTAIN_SIGNAL
     from schemas import ClockDrawingMetadata, ClockScoreResult
@@ -57,6 +60,10 @@ def score_image(
     predicted_signal = str(model.classes_[best_index])
     confidence = float(probabilities[best_index])
     signal_band = UNCERTAIN_SIGNAL if confidence < threshold else predicted_signal
+    class_probabilities = {
+        str(model.classes_[index]): round(float(probability), 6)
+        for index, probability in enumerate(probabilities)
+    }
 
     return build_safe_result(
         signal_band=signal_band,
@@ -64,6 +71,7 @@ def score_image(
         metadata={
             "task_completed": True,
             "model_version": payload.get("model_version") or MODEL_VERSION,
+            "class_probabilities": class_probabilities,
         },
     )
 
@@ -94,7 +102,7 @@ def build_safe_result(
         model_version=model_version,
         scoring_mode=SCORING_MODE,
         reason=str(reason) if reason else None,
-    ).to_dict()
+    ).to_dict() | _optional_debug_scores(meta)
 
 
 def _features_from_image_or_path(image_or_path: Image.Image | Path | str) -> np.ndarray:
@@ -111,6 +119,13 @@ def _metadata_to_dict(metadata: ClockDrawingMetadata | dict[str, Any] | None) ->
     if isinstance(metadata, ClockDrawingMetadata):
         return metadata.to_dict()
     return dict(metadata)
+
+
+def _optional_debug_scores(metadata: dict[str, Any]) -> dict[str, Any]:
+    class_probabilities = metadata.get("class_probabilities")
+    if isinstance(class_probabilities, dict):
+        return {"class_probabilities": class_probabilities}
+    return {}
 
 
 def _explanation_for_signal(signal_band: str, reason: Any = None) -> str:

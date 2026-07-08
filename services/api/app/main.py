@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from html import escape
 from hashlib import sha256
+import json
 from pathlib import Path
+from statistics import mean
+from tempfile import NamedTemporaryFile
 from time import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 from uuid import uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
@@ -65,6 +69,10 @@ DRAWING_TASKS = [
 ]
 
 
+def log_backend_json(event: str, payload: dict[str, object]) -> None:
+    print(json.dumps({"event": event, **payload}, sort_keys=True), flush=True)
+
+
 class SessionStartRequest(BaseModel):
     age_band: str
     preferred_language: str
@@ -85,11 +93,14 @@ class ChecklistRequest(BaseModel):
 
 class VoiceTaskRequest(BaseModel):
     session_id: str
+    picture_id: str = "demo-picture"
     duration_sec: int = 40
     pause_count: int = 4
     long_pause_count: int = 1
     estimated_word_count: int = 65
     transcript: str = ""
+    audio_uri: Optional[str] = None
+    model_name: str = "Auralis/NatHACKS_Auralis"
 
 
 class DrawingPoint(BaseModel):
@@ -128,6 +139,48 @@ class ClockDrawingScoreRequest(BaseModel):
 
 class ScoreRequest(BaseModel):
     session_id: str
+
+
+class MemoryDevice(BaseModel):
+    platform: str | None = None
+    app_version: str | None = None
+
+
+class MemoryStudyItem(BaseModel):
+    person: str
+    item: str
+
+
+class MemoryQuestion(BaseModel):
+    question_id: str
+    type: Literal["person_for_item", "item_for_person", "not_shown_item"]
+    prompt: str
+    correct_answer: str
+    selected_answer: str | None = None
+    response_time_ms: int | None = Field(default=None, ge=0)
+
+
+class MemoryScoreRequest(BaseModel):
+    session_id: str
+    task_id: str = "hawker_memory_v1"
+    study_items: List[MemoryStudyItem]
+    questions: List[MemoryQuestion]
+    started_at: str | None = None
+    completed_at: str | None = None
+    device: MemoryDevice | None = None
+
+
+class MemoryScoreResponse(BaseModel):
+    task_id: str
+    score: int
+    max_score: int
+    accuracy: float
+    correct_count: int
+    incorrect_count: int
+    avg_response_time_ms: int | None
+    flags: List[str]
+    summary: str
+    domain: Literal["memory_recall"]
 
 
 def ensure_session(session_id: str) -> dict:
@@ -309,8 +362,18 @@ def combine_score(session: dict) -> dict:
         ),
     )
     caregiver = caregiver_signal(session.get("checklist"))
+    memory = session.get(
+        "memory_signal",
+        signal_payload(
+            "memory_recall",
+            "green",
+            80,
+            "Hawker Memory task has not been completed in this session.",
+        ),
+    )
     signals = {
         "language": voice,
+        "memory_recall": memory,
         "visuospatial_planning": drawing,
         "caregiver_concern": caregiver,
     }
@@ -357,16 +420,322 @@ def caregiver_checklist(payload: ChecklistRequest) -> Dict[str, bool]:
 @app.post("/task/voice")
 def task_voice(payload: VoiceTaskRequest) -> dict:
     session = ensure_session(payload.session_id)
-    band = "amber" if payload.long_pause_count >= 3 or payload.estimated_word_count < 45 else "green"
-    score = 62 if band == "amber" else 82
+    voice_prediction = voice_prediction_from_metadata(payload)
+    band = voice_prediction["band"]
+    score = int(voice_prediction["language_domain_score"])
     reason = (
-        "Mock voice metadata showed longer pauses or lower estimated fluency."
-        if band == "amber"
-        else "Mock voice metadata did not show a strong language signal."
+        "Picture Story Voice showed speech-language features from the demo "
+        f"pipeline: {payload.long_pause_count} long pauses, "
+        f"{payload.estimated_word_count} estimated words, and "
+        f"{speech_rate(payload)} words per minute."
     )
     session["voice_task"] = payload.model_dump()
     session["voice_signal"] = signal_payload("language", band, score, reason)
-    return {"saved": True, "voice_signal": session["voice_signal"]}
+    session["voice_signal"]["model"] = payload.model_name
+    session["voice_signal"]["disclaimer"] = DISCLAIMER
+    session["voice_prediction"] = voice_prediction
+    log_backend_json(
+        "voice_metadata_score",
+        {
+            "session_id": payload.session_id,
+            "picture_id": payload.picture_id,
+            "model": payload.model_name,
+            "voice_band": band,
+            "voice_score": score,
+            "features": voice_prediction["features"],
+            "disclaimer": DISCLAIMER,
+        },
+    )
+    return {
+        "saved": True,
+        "voice_signal": session["voice_signal"],
+        "prediction": voice_prediction,
+    }
+
+
+@app.post("/task/voice/audio")
+async def task_voice_audio(
+    session_id: str = "demo-session-001",
+    picture_id: str = "demo-picture",
+    file: UploadFile = File(...),
+) -> dict:
+    content = await file.read()
+    raw_prediction = await predict_audio_bytes(content, file.filename)
+    transcription = await transcribe_audio_bytes(content, file.filename)
+    signal = signal_from_auralis(raw_prediction)
+    prediction = {
+        "model": "Auralis/NatHACKS_Auralis",
+        "task": "picture_story_voice",
+        "picture_id": picture_id,
+        "language_domain_score": signal["score"],
+        "band": signal["band"],
+        "risk_signal": signal["band"],
+        "raw_model_output": raw_prediction,
+        "transcription": transcription,
+        "clinical_claim": "possible language-domain signal only",
+        "disclaimer": DISCLAIMER,
+    }
+    session = ensure_session(session_id)
+    session["voice_signal"] = signal
+    session["voice_prediction"] = prediction
+    log_backend_json(
+        "voice_audio_score",
+        {
+            "session_id": session_id,
+            "picture_id": picture_id,
+            "filename": file.filename,
+            "voice_band": signal.get("band"),
+            "voice_score": signal.get("score"),
+            "model": signal.get("model"),
+            "auralis_top_label": raw_prediction.get("top_label"),
+            "auralis_top_score": raw_prediction.get("top_score"),
+            "whisper_model": transcription.get("model"),
+            "whisper_word_count": transcription.get("word_count"),
+            "whisper_warning": transcription.get("warning"),
+            "disclaimer": DISCLAIMER,
+        },
+    )
+    return {
+        "saved": True,
+        "voice_signal": signal,
+        "prediction": prediction,
+    }
+
+
+@app.post("/transcribe/whisper")
+async def transcribe_whisper(file: UploadFile = File(...)) -> dict[str, object]:
+    try:
+        try:
+            from app.whisper_service import transcribe_upload
+        except ModuleNotFoundError:
+            from services.api.app.whisper_service import transcribe_upload
+    except Exception as exc:
+        log_backend_json(
+            "whisper_transcribe",
+            {
+                "filename": file.filename,
+                "loaded": False,
+                "warning": str(exc),
+            },
+        )
+        raise HTTPException(status_code=503, detail=f"Whisper unavailable: {exc}") from exc
+
+    result = await transcribe_upload(file)
+    log_backend_json(
+        "whisper_transcribe",
+        {
+            "filename": file.filename,
+            "loaded": True,
+            "model": result.get("model"),
+            "duration_sec": result.get("duration_sec"),
+            "word_count": result.get("word_count"),
+            "language": result.get("language"),
+            "language_probability": result.get("language_probability"),
+        },
+    )
+    return result
+
+
+@app.get("/model/auralis/status")
+def auralis_status() -> dict[str, object]:
+    try:
+        try:
+            from app.auralis_model import MODEL_ID, get_auralis_model
+        except ModuleNotFoundError:
+            from services.api.app.auralis_model import MODEL_ID, get_auralis_model
+
+        model = get_auralis_model()
+    except Exception as exc:
+        response = {
+            "model": "Auralis/NatHACKS_Auralis",
+            "loaded": False,
+            "warning": str(exc),
+        }
+        log_backend_json("auralis_status", response)
+        return response
+
+    response = {
+        "model": MODEL_ID,
+        "loaded": True,
+        "device": str(model.device),
+        "labels": model.config.id2label,
+        "warning": (
+            "Model output is a research signal only. It is not a diagnosis and "
+            "has not been locally clinically validated for MindTrail SG."
+        ),
+    }
+    log_backend_json("auralis_status", response)
+    return response
+
+
+@app.get("/model/whisper/status")
+def whisper_status() -> dict[str, object]:
+    try:
+        try:
+            from app.whisper_service import WHISPER_MODEL_SIZE, get_whisper_transcriber
+        except ModuleNotFoundError:
+            from services.api.app.whisper_service import WHISPER_MODEL_SIZE, get_whisper_transcriber
+
+        get_whisper_transcriber()
+    except Exception as exc:
+        response = {
+            "model": "faster-whisper/tiny",
+            "loaded": False,
+            "warning": str(exc),
+        }
+        log_backend_json("whisper_status", response)
+        return response
+
+    response = {
+        "model": f"faster-whisper/{WHISPER_MODEL_SIZE}",
+        "loaded": True,
+        "warning": (
+            "Whisper transcription is approximate and should be reviewed before "
+            "clinical or caregiver use."
+        ),
+    }
+    log_backend_json("whisper_status", response)
+    return response
+
+
+def voice_prediction_from_metadata(payload: VoiceTaskRequest) -> dict[str, object]:
+    score = voice_score_from_metadata(payload)
+    band = voice_band_for_score(score)
+    return {
+        "model": payload.model_name,
+        "task": "picture_story_voice",
+        "picture_id": payload.picture_id,
+        "language_domain_score": score,
+        "band": band,
+        "risk_signal": band,
+        "features": {
+            "duration_sec": payload.duration_sec,
+            "pause_count": payload.pause_count,
+            "long_pause_count": payload.long_pause_count,
+            "estimated_word_count": payload.estimated_word_count,
+            "speech_rate_words_per_min": speech_rate(payload),
+        },
+        "clinical_claim": "possible language-domain signal only",
+        "disclaimer": DISCLAIMER,
+    }
+
+
+def voice_score_from_metadata(payload: VoiceTaskRequest) -> int:
+    score = 100
+    score -= min(payload.long_pause_count * 8, 32)
+    score -= min(max(payload.pause_count - 4, 0) * 3, 24)
+    if payload.estimated_word_count < 30:
+        score -= 20
+    elif payload.estimated_word_count < 55:
+        score -= 10
+    if payload.duration_sec < 20:
+        score -= 15
+
+    words_per_minute = speech_rate(payload)
+    if words_per_minute < 65:
+        score -= 14
+    elif words_per_minute < 90:
+        score -= 7
+    return max(0, min(100, score))
+
+
+def voice_band_for_score(score: int) -> str:
+    if score >= 75:
+        return "green"
+    if score >= 50:
+        return "amber"
+    return "red"
+
+
+def speech_rate(payload: VoiceTaskRequest) -> int:
+    if payload.duration_sec <= 0:
+        return 0
+    return round(payload.estimated_word_count / (payload.duration_sec / 60))
+
+
+async def predict_audio_bytes(content: bytes, filename: str | None) -> dict[str, object]:
+    suffix = Path(filename or "audio.wav").suffix or ".wav"
+    with NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+        temp_file.write(content)
+        temp_path = Path(temp_file.name)
+
+    try:
+        try:
+            from app.auralis_model import get_auralis_model
+        except ModuleNotFoundError:
+            from services.api.app.auralis_model import get_auralis_model
+
+        return get_auralis_model().predict_path(temp_path)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Auralis unavailable: {exc}") from exc
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+async def transcribe_audio_bytes(content: bytes, filename: str | None) -> dict[str, object]:
+    suffix = Path(filename or "audio.wav").suffix or ".wav"
+    with NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+        temp_file.write(content)
+        temp_path = Path(temp_file.name)
+
+    try:
+        try:
+            from app.whisper_service import get_whisper_transcriber
+        except ModuleNotFoundError:
+            from services.api.app.whisper_service import get_whisper_transcriber
+
+        return get_whisper_transcriber().transcribe_path(temp_path)
+    except Exception as exc:
+        return {
+            "model": "faster-whisper/tiny",
+            "warning": f"Whisper unavailable: {exc}",
+            "text": "",
+            "word_count": 0,
+        }
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def signal_from_auralis(raw_prediction: dict[str, object]) -> dict:
+    audio_quality = raw_prediction.get("audio_quality")
+    if isinstance(audio_quality, dict) and audio_quality.get("is_silent") is True:
+        signal = signal_payload(
+            "language",
+            "amber",
+            50,
+            (
+                "No usable speech was detected in the recording, so the "
+                "Auralis model was not used for a cognitive-risk signal. "
+                "Please retry with audible speech if this was unintentional."
+            ),
+        )
+        signal["model"] = "Auralis/NatHACKS_Auralis"
+        signal["disclaimer"] = DISCLAIMER
+        return signal
+
+    scores = raw_prediction.get("scores", [])
+    dementia_score = 0.0
+    if isinstance(scores, list):
+        for item in scores:
+            if isinstance(item, dict) and item.get("label") == "dementia":
+                dementia_score = float(item.get("score", 0.0))
+                break
+
+    score = round((1 - dementia_score) * 100)
+    band = voice_band_for_score(score)
+    signal = signal_payload(
+        "language",
+        band,
+        score,
+        (
+            "Auralis/NatHACKS_Auralis returned an audio-classification research "
+            f"signal with raw dementia-label probability {dementia_score:.2f}. "
+            "Use this only as a possible language-domain signal."
+        ),
+    )
+    signal["model"] = "Auralis/NatHACKS_Auralis"
+    signal["disclaimer"] = DISCLAIMER
+    return signal
 
 
 @app.post("/task/drawing")
@@ -401,6 +770,89 @@ def task_drawing_score(payload: ClockDrawingScoreRequest) -> dict:
     if payload.session_id:
         session["drawing_score_payload"] = payload_dict
         session["drawing_score_result"] = result
+    return result
+
+
+@app.post("/task/memory/score", response_model=MemoryScoreResponse)
+def score_memory_task(payload: MemoryScoreRequest) -> MemoryScoreResponse:
+    if payload.task_id != "hawker_memory_v1":
+        raise HTTPException(status_code=400, detail="Unsupported memory task_id.")
+
+    if not payload.questions:
+        raise HTTPException(status_code=400, detail="At least one recall question is required.")
+
+    correct_count = sum(
+        1
+        for question in payload.questions
+        if question.selected_answer == question.correct_answer
+    )
+    max_score = len(payload.questions)
+    incorrect_count = max_score - correct_count
+    accuracy = correct_count / max_score
+    response_times = [
+        question.response_time_ms
+        for question in payload.questions
+        if question.response_time_ms is not None
+    ]
+    avg_response_time_ms = round(mean(response_times)) if response_times else None
+    flags: List[str] = []
+
+    if accuracy < 0.6:
+        flags.append("low_accuracy")
+    if avg_response_time_ms is not None and avg_response_time_ms < 900:
+        flags.append("very_fast_responses")
+
+    missed_associations = sum(
+        1
+        for question in payload.questions
+        if question.type != "not_shown_item"
+        and question.selected_answer != question.correct_answer
+    )
+    if missed_associations >= 3:
+        flags.append("many_missed_associations")
+
+    if accuracy >= 0.8:
+        summary = "Good recall of the hawker orders."
+    elif accuracy >= 0.6:
+        summary = "Some hawker order details were recalled; a few associations were missed."
+    else:
+        summary = "Several hawker order associations were missed in this game."
+
+    result = MemoryScoreResponse(
+        task_id=payload.task_id,
+        score=correct_count,
+        max_score=max_score,
+        accuracy=accuracy,
+        correct_count=correct_count,
+        incorrect_count=incorrect_count,
+        avg_response_time_ms=avg_response_time_ms,
+        flags=flags,
+        summary=summary,
+        domain="memory_recall",
+    )
+    session = ensure_session(payload.session_id)
+    session["memory_task"] = payload.model_dump()
+    session["memory_score_result"] = result.model_dump()
+    session["memory_signal"] = signal_payload(
+        "memory_recall",
+        "green" if accuracy >= 0.6 else "amber",
+        round(accuracy * 100),
+        summary,
+    )
+    log_backend_json(
+        "memory_score",
+        {
+            "session_id": payload.session_id,
+            "task_id": payload.task_id,
+            "score": correct_count,
+            "max_score": max_score,
+            "accuracy": round(accuracy, 3),
+            "avg_response_time_ms": avg_response_time_ms,
+            "flags": flags,
+            "domain": "memory_recall",
+            "disclaimer": DISCLAIMER,
+        },
+    )
     return result
 
 

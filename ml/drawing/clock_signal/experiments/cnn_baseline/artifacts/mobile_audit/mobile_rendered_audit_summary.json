@@ -1,11 +1,20 @@
 {
-  "agreement_rate": null,
-  "cnn_model_path": "ml/drawing/clock_signal/experiments/cnn_baseline/artifacts/densenet121_clock_cnn.pt",
-  "cnn_prediction_counts": {},
-  "cnn_uncertain_count": 0,
-  "hog_model_path": "ml/drawing/clock_signal/artifacts/clock_signal_baseline.joblib",
-  "hog_prediction_counts": {},
-  "hog_uncertain_count": 0,
+  "agreement_rate": 0.631579,
+  "cnn_model_path": "ml\\drawing\\clock_signal\\experiments\\cnn_baseline\\artifacts\\densenet121_clock_cnn.pt",
+  "cnn_prediction_counts": {
+    "higher_signal": 13,
+    "low_signal": 2,
+    "uncertain": 4
+  },
+  "cnn_uncertain_count": 4,
+  "hog_model_path": "ml\\drawing\\clock_signal\\artifacts\\clock_signal_baseline.joblib",
+  "hog_prediction_counts": {
+    "higher_signal": 15,
+    "low_signal": 2,
+    "medium_signal": 1,
+    "uncertain": 1
+  },
+  "hog_uncertain_count": 1,
   "threshold": 0.6,
-  "total_images": 0
+  "total_images": 19
 }

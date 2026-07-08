@@ -42,27 +42,65 @@ def audit_mobile_rendered_images(
         print(EMPTY_AUDIT_MESSAGE)
         return summary
 
-    from ml.drawing.clock_signal.scorer import score_image as score_hog_image
+    try:
+        from ml.drawing.clock_signal.scorer import score_image as score_hog_image
+    except Exception as exc:
+        score_hog_image = None
+        hog_import_error = _format_error(exc)
+    else:
+        hog_import_error = None
 
     try:
         from .cnn_scorer import score_cnn_image
-    except ImportError:  # pragma: no cover - supports direct script execution.
-        from cnn_scorer import score_cnn_image
+    except Exception as exc:
+        if __package__:
+            score_cnn_image = None
+            cnn_import_error = _format_error(exc)
+        else:  # pragma: no cover - supports direct script execution.
+            try:
+                from cnn_scorer import score_cnn_image
+            except Exception as fallback_exc:
+                score_cnn_image = None
+                cnn_import_error = _format_error(fallback_exc)
+            else:
+                cnn_import_error = None
+    else:
+        cnn_import_error = None
 
     rows: list[dict[str, Any]] = []
     for image_path in image_paths:
-        cnn_result = score_cnn_image(
-            image_path_or_pil=image_path,
-            model_path=cnn_model_path,
-            model_info_path=cnn_model_info,
-            threshold=threshold,
-            device=device,
-        )
-        hog_result = score_hog_image(
-            image_or_path=image_path,
-            model_path=hog_model_path,
-            threshold=threshold,
-        )
+        if score_cnn_image is None:
+            cnn_result = _error_result(cnn_import_error or "cnn_import_failed")
+            cnn_error = cnn_result["error"]
+        else:
+            try:
+                cnn_result = score_cnn_image(
+                    image_path_or_pil=image_path,
+                    model_path=cnn_model_path,
+                    model_info_path=cnn_model_info,
+                    threshold=threshold,
+                    device=device,
+                )
+                cnn_error = ""
+            except Exception as exc:
+                cnn_result = _error_result(_format_error(exc))
+                cnn_error = cnn_result["error"]
+
+        if score_hog_image is None:
+            hog_result = _error_result(hog_import_error or "hog_import_failed")
+            hog_error = hog_result["error"]
+        else:
+            try:
+                hog_result = score_hog_image(
+                    image_or_path=image_path,
+                    model_path=hog_model_path,
+                    threshold=threshold,
+                )
+                hog_error = ""
+            except Exception as exc:
+                hog_result = _error_result(_format_error(exc))
+                hog_error = hog_result["error"]
+
         rows.append(
             {
                 "filename": str(image_path.name),
@@ -73,6 +111,8 @@ def audit_mobile_rendered_images(
                 "agreement": bool(hog_result.get("signal_band") == cnn_result.get("signal_band")),
                 "cnn_scoring_mode": cnn_result.get("scoring_mode"),
                 "hog_scoring_mode": hog_result.get("scoring_mode"),
+                "cnn_error": cnn_error,
+                "hog_error": hog_error,
             }
         )
 
@@ -153,6 +193,8 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         "agreement",
         "cnn_scoring_mode",
         "hog_scoring_mode",
+        "cnn_error",
+        "hog_error",
     ]
     with path.open("w", encoding="utf-8", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames)
@@ -179,6 +221,19 @@ def _print_summary(summary: dict[str, Any]) -> None:
             sort_keys=True,
         )
     )
+
+
+def _error_result(error: str) -> dict[str, Any]:
+    return {
+        "signal_band": "error",
+        "confidence": None,
+        "scoring_mode": "unavailable",
+        "error": error,
+    }
+
+
+def _format_error(exc: Exception) -> str:
+    return f"{type(exc).__name__}: {exc}"
 
 
 if __name__ == "__main__":
