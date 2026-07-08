@@ -50,6 +50,34 @@ mindtrail-sg/
 
 ## Local development commands
 
+### One-command Windows demo
+
+From the repo root:
+
+```powershell
+.\scripts\run-demo.ps1
+```
+
+This installs dependencies, creates the backend virtual environment, warms the
+Auralis and Whisper model caches, builds the web app, and starts:
+
+```text
+App:     http://127.0.0.1:8081/
+Backend: http://127.0.0.1:8000/
+```
+
+Useful options:
+
+```powershell
+.\scripts\run-demo.ps1 -SkipInstall
+.\scripts\run-demo.ps1 -SkipModelWarmup
+.\scripts\run-demo.ps1 -Phone
+```
+
+For phone testing, use `-Phone`, update `API_BASE_URL` in `apps/mobile/App.tsx`
+to the PC's Wi-Fi IP address, and allow Python/Node through Windows Firewall if
+prompted.
+
 ### Mobile
 
 ```bash

@@ -25,6 +25,14 @@ type StoryPicture = {
   image: ImageSourcePropType;
 };
 
+type PersonalizedPictureResponse = {
+  use_personalized_generation: boolean;
+  generated_image_url: string | null;
+  image_prompt: string | null;
+  fallback_picture_id: string;
+  safety_note: string;
+};
+
 type VoiceTaskPayload = {
   session_id: string;
   picture_id: string;
@@ -36,6 +44,7 @@ type VoiceTaskPayload = {
   audio_uri: string | null;
   audio_blob?: Blob;
   model_name: string;
+  image_prompt: string | null;
 };
 
 type WebRecordingState = {
@@ -118,10 +127,24 @@ const STORY_PICTURES: StoryPicture[] = [
 const DISCLAIMER =
   "This is not a diagnosis. Please discuss new or worsening concerns with a healthcare professional.";
 
+const DUMMY_USER_DETAILS = {
+  age_band: "70-79",
+  preferred_language: "English and Mandarin",
+  childhood_neighbourhood: "Toa Payoh",
+  former_occupation: "primary school teacher",
+  hobbies: ["morning walks", "wet market shopping", "cooking for family"],
+  familiar_places: ["HDB void deck", "hawker centre", "neighbourhood market"],
+  family_context: "adult daughter often accompanies the user on errands",
+};
+
 let activeWebRecording: WebRecordingState | null = null;
 
 function getRandomStoryPicture(): StoryPicture {
   return STORY_PICTURES[Math.floor(Math.random() * STORY_PICTURES.length)];
+}
+
+function findStoryPicture(id: string): StoryPicture | undefined {
+  return STORY_PICTURES.find((picture) => picture.id === id);
 }
 
 export default function App() {
@@ -134,6 +157,7 @@ export default function App() {
   const [statusText, setStatusText] = useState("Ready to begin");
   const [prediction, setPrediction] = useState<VoicePrediction | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [imagePrompt, setImagePrompt] = useState<string | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
   const startedAtRef = useRef<number | null>(null);
@@ -158,6 +182,7 @@ export default function App() {
   }, [prediction]);
 
   useEffect(() => {
+    void choosePersonalizedPicture();
     return () => {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
@@ -169,8 +194,16 @@ export default function App() {
     };
   }, []);
 
+  async function choosePersonalizedPicture() {
+    const picture = await getPersonalizedPicture();
+    setSelectedPicture(picture.picture);
+    selectedPictureRef.current = picture.picture;
+    setImagePrompt(picture.imagePrompt);
+  }
+
   async function startTask() {
-    const randomPicture = getRandomStoryPicture();
+    const pictureChoice = await getPersonalizedPicture();
+    const randomPicture = pictureChoice.picture;
 
     try {
       const recording =
@@ -181,6 +214,7 @@ export default function App() {
 
       setSelectedPicture(randomPicture);
       selectedPictureRef.current = randomPicture;
+      setImagePrompt(pictureChoice.imagePrompt);
       setPrediction(null);
       setErrorMessage(null);
       setIsRecording(true);
@@ -240,6 +274,7 @@ export default function App() {
       durationSec,
       audioUri,
       audioBlob,
+      imagePrompt,
     );
     startedAtRef.current = null;
 
@@ -326,6 +361,13 @@ export default function App() {
           </Text>
         </View>
 
+        {imagePrompt ? (
+          <View style={styles.promptPanel}>
+            <Text style={styles.promptLabel}>Personalized image prompt</Text>
+            <Text style={styles.promptText}>{imagePrompt}</Text>
+          </View>
+        ) : null}
+
         {prediction ? (
           <View style={styles.resultPanel}>
             <View style={styles.resultHeader}>
@@ -359,6 +401,7 @@ function buildDemoVoicePayload(
   durationSec: number,
   audioUri: string | null,
   audioBlob?: Blob,
+  imagePrompt?: string | null,
 ): VoiceTaskPayload {
   return {
     session_id: "demo-session-001",
@@ -371,6 +414,7 @@ function buildDemoVoicePayload(
     audio_uri: audioUri,
     audio_blob: audioBlob,
     model_name: "Auralis/NatHACKS_Auralis",
+    image_prompt: imagePrompt ?? null,
   };
 }
 
@@ -421,6 +465,9 @@ async function submitVoiceTask(payload: VoiceTaskPayload): Promise<VoicePredicti
       const formData = new FormData();
       formData.append("session_id", payload.session_id);
       formData.append("picture_id", payload.picture_id);
+      if (payload.image_prompt) {
+        formData.append("image_prompt", payload.image_prompt);
+      }
 
       if (payload.audio_blob) {
         formData.append("file", payload.audio_blob, "voice-task.wav");
@@ -465,6 +512,53 @@ async function submitVoiceTask(payload: VoiceTaskPayload): Promise<VoicePredicti
   }
 
   return (await response.json()) as VoicePrediction;
+}
+
+async function getPersonalizedPicture(): Promise<{
+  picture: StoryPicture;
+  imagePrompt: string | null;
+}> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/picture-story/personalized`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        session_id: "demo-session-001",
+        details: DUMMY_USER_DETAILS,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API returned ${response.status}`);
+    }
+
+    const json = (await response.json()) as PersonalizedPictureResponse;
+    const fallbackPicture =
+      findStoryPicture(json.fallback_picture_id) ?? getRandomStoryPicture();
+
+    if (json.generated_image_url) {
+      return {
+        picture: {
+          id: "generated-reminiscence",
+          title: "Personalized reminiscence scene",
+          image: { uri: json.generated_image_url },
+        },
+        imagePrompt: json.image_prompt,
+      };
+    }
+
+    return {
+      picture: fallbackPicture,
+      imagePrompt: json.image_prompt,
+    };
+  } catch (error) {
+    return {
+      picture: getRandomStoryPicture(),
+      imagePrompt: null,
+    };
+  }
 }
 
 async function startNativeRecording(): Promise<Audio.Recording> {
@@ -697,6 +791,25 @@ const styles = StyleSheet.create({
     color: "#33443a",
     fontSize: 14,
     lineHeight: 21,
+  },
+  promptPanel: {
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 8,
+    backgroundColor: "#f8fafc",
+    borderColor: "#dbe3ea",
+    borderWidth: 1,
+  },
+  promptLabel: {
+    color: "#17202a",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  promptText: {
+    marginTop: 6,
+    color: "#475569",
+    fontSize: 13,
+    lineHeight: 19,
   },
   resultPanel: {
     marginTop: 18,

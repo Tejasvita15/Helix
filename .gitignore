@@ -30,8 +30,10 @@ yarn-error.log*
 pnpm-debug.log*
 .expo/
 .expo-shared/
+.expo-web*/
 dist/
 web-build/
+apps/mobile/.expo-web*/
 
 # Local Expo/Metro config generated during mobile development
 apps/mobile/.nvmrc

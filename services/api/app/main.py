@@ -5,7 +5,7 @@ from tempfile import NamedTemporaryFile
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
@@ -74,6 +74,7 @@ class VoiceTaskRequest(BaseModel):
     transcript: str = ""
     audio_uri: str | None = None
     model_name: str = "Auralis/NatHACKS_Auralis"
+    image_prompt: str | None = None
 
 
 class DomainSignal(BaseModel):
@@ -106,6 +107,29 @@ class WhisperStatusResponse(BaseModel):
     model: str
     loaded: bool
     warning: str | None = None
+
+
+class UserReminiscenceDetails(BaseModel):
+    age_band: str | None = None
+    preferred_language: str | None = None
+    childhood_neighbourhood: str | None = None
+    former_occupation: str | None = None
+    hobbies: list[str] = []
+    familiar_places: list[str] = []
+    family_context: str | None = None
+
+
+class PersonalizedPictureRequest(BaseModel):
+    session_id: str = "demo-session-001"
+    details: UserReminiscenceDetails | None = None
+
+
+class PersonalizedPictureResponse(BaseModel):
+    use_personalized_generation: bool
+    generated_image_url: str | None = None
+    image_prompt: str | None = None
+    fallback_picture_id: str
+    safety_note: str
 
 
 class ScoreRequest(BaseModel):
@@ -163,6 +187,7 @@ def voice_task(payload: VoiceTaskRequest) -> VoiceTaskResponse:
             "estimated_word_count": payload.estimated_word_count,
             "speech_rate_words_per_min": speech_rate(payload),
         },
+        "image_prompt": payload.image_prompt,
         "clinical_claim": "possible language-domain signal only",
         "disclaimer": signal.disclaimer,
     }
@@ -173,8 +198,9 @@ def voice_task(payload: VoiceTaskRequest) -> VoiceTaskResponse:
 
 @app.post("/task/voice/audio")
 async def voice_task_audio(
-    session_id: str = "demo-session-001",
-    picture_id: str = "demo-picture",
+    session_id: str = Form("demo-session-001"),
+    picture_id: str = Form("demo-picture"),
+    image_prompt: str | None = Form(None),
     file: UploadFile = File(...),
 ) -> VoiceTaskResponse:
     content = await file.read()
@@ -190,6 +216,7 @@ async def voice_task_audio(
         "risk_signal": signal.band,
         "raw_model_output": raw_prediction,
         "transcription": transcription,
+        "image_prompt": image_prompt,
         "clinical_claim": "possible language-domain signal only",
         "disclaimer": signal.disclaimer,
     }
@@ -201,6 +228,33 @@ async def voice_task_audio(
 @app.post("/transcribe/whisper")
 async def transcribe_whisper(file: UploadFile = File(...)) -> dict[str, object]:
     return await transcribe_upload(file)
+
+
+@app.post("/picture-story/personalized")
+def personalized_picture(
+    payload: PersonalizedPictureRequest,
+) -> PersonalizedPictureResponse:
+    fallback_picture_id = fallback_picture_for_session(payload.session_id)
+    if payload.details is None:
+        return PersonalizedPictureResponse(
+            use_personalized_generation=False,
+            fallback_picture_id=fallback_picture_id,
+            safety_note=(
+                "No user details were provided. Use a built-in everyday picture "
+                "story image."
+            ),
+        )
+
+    return PersonalizedPictureResponse(
+        use_personalized_generation=True,
+        generated_image_url=None,
+        image_prompt=build_reminiscence_image_prompt(payload.details),
+        fallback_picture_id=fallback_picture_id,
+        safety_note=(
+            "Generated reminiscence images should avoid medical claims, avoid "
+            "showing real identifiable people, and be reviewed before use."
+        ),
+    )
 
 
 @app.get("/model/auralis/status")
@@ -490,3 +544,38 @@ def combine_bands(language: Band, caregiver: Band) -> Band:
     if "amber" in {language, caregiver}:
         return "amber"
     return "green"
+
+
+def fallback_picture_for_session(session_id: str) -> str:
+    picture_ids = [
+        "hdb-breakfast",
+        "hawker-lunch",
+        "clinic-waiting",
+        "void-deck-exercise",
+        "wet-market",
+        "commute-station",
+    ]
+    index = abs(hash(session_id)) % len(picture_ids)
+    return picture_ids[index]
+
+
+def build_reminiscence_image_prompt(details: UserReminiscenceDetails) -> str:
+    hobbies = ", ".join(details.hobbies) if details.hobbies else "everyday routines"
+    places = ", ".join(details.familiar_places) if details.familiar_places else "familiar Singapore neighbourhood spaces"
+    return (
+        "Create a respectful, non-medical Picture Story image for an older adult "
+        "to describe aloud. Make it feel familiar and reminiscence-friendly, "
+        "based on these user details: "
+        f"age band: {details.age_band or 'unknown'}; "
+        f"preferred language/culture cue: {details.preferred_language or 'unknown'}; "
+        f"childhood neighbourhood: {details.childhood_neighbourhood or 'unknown'}; "
+        f"former occupation: {details.former_occupation or 'unknown'}; "
+        f"hobbies/interests: {hobbies}; "
+        f"familiar places: {places}; "
+        f"family context: {details.family_context or 'unknown'}. "
+        "The scene should show ordinary Singapore everyday life, multiple clear "
+        "actions, objects, and relationships that are easy to describe. Avoid "
+        "diagnosis themes, hospital distress, readable text, logos, political or "
+        "religious symbols, and real-person likenesses. Use a warm realistic "
+        "16:9 editorial-photo style."
+    )
