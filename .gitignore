@@ -21,6 +21,7 @@ env/
 *.db
 *.sqlite
 *.sqlite3
+services/api/session_logs/
 
 # Node / Expo
 node_modules/

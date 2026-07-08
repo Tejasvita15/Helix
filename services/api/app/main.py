@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from html import escape
 from hashlib import sha256
 import json
@@ -50,6 +51,7 @@ app.add_middleware(
 )
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
+SESSION_LOG_DIR = ROOT_DIR / "services" / "api" / "session_logs"
 MODEL_PATH = ROOT_DIR / "datasets" / "CDT-API-Network" / "clock_hog_svm.joblib"
 DISCLAIMER = (
     "This is not a diagnosis. Please discuss new or worsening concerns with a "
@@ -71,6 +73,88 @@ DRAWING_TASKS = [
 
 def log_backend_json(event: str, payload: dict[str, object]) -> None:
     print(json.dumps({"event": event, **payload}, sort_keys=True), flush=True)
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def session_log_path(session_id: str) -> Path:
+    safe_session_id = "".join(
+        character if character.isalnum() or character in {"-", "_"} else "_"
+        for character in session_id
+    )
+    return SESSION_LOG_DIR / f"{safe_session_id}.json"
+
+
+def session_llm_context(session: dict) -> dict[str, object]:
+    voice_prediction = session.get("voice_prediction") or {}
+    voice_task = session.get("voice_task") or {}
+    memory_result = session.get("memory_score_result") or {}
+    drawing_result = session.get("drawing_score_result") or {}
+    score = session.get("score") or combine_score(session)
+
+    return {
+        "session_id": session.get("session_id"),
+        "generated_at": utc_now_iso(),
+        "disclaimer": DISCLAIMER,
+        "profile": session.get("profile"),
+        "caregiver_checklist": session.get("checklist"),
+        "voice_task": {
+            "input": voice_task,
+            "signal": session.get("voice_signal"),
+            "prediction": voice_prediction,
+            "transcription": voice_prediction.get("transcription")
+            if isinstance(voice_prediction, dict)
+            else None,
+            "notes_for_llm": [
+                "voice_metadata_score means the app used fallback metadata instead of audio model scoring.",
+                "voice_audio_score means the app submitted an audio file; inspect warnings before trusting model output.",
+            ],
+        },
+        "memory_task": {
+            "input": session.get("memory_task"),
+            "result": memory_result,
+            "signal": session.get("memory_signal"),
+        },
+        "drawing_task": {
+            "prompt": session.get("drawing_task_prompt"),
+            "payload": session.get("drawing_score_payload") or session.get("drawing_task"),
+            "result": drawing_result,
+            "signal": session.get("drawing_signal"),
+        },
+        "overall_score": score,
+        "llm_analysis_guardrails": [
+            "Do not diagnose dementia.",
+            "Describe domain-level risk signals only.",
+            "Call out uncertain, fallback, missing, or unavailable model outputs.",
+            "Recommend discussing new or worsening concerns with a healthcare professional.",
+        ],
+    }
+
+
+def persist_session_json(session: dict, event: str) -> None:
+    SESSION_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    session["updated_at"] = utc_now_iso()
+    session["last_event"] = event
+    snapshot = {
+        "schema_version": "mindtrail_session_log_v1",
+        "event": event,
+        "session": session,
+        "llm_context": session_llm_context(session),
+    }
+    path = session_log_path(str(session["session_id"]))
+    temp_path = path.with_suffix(".tmp")
+    temp_path.write_text(json.dumps(snapshot, indent=2, sort_keys=True), encoding="utf-8")
+    temp_path.replace(path)
+    log_backend_json(
+        "session_json_saved",
+        {
+            "session_id": session["session_id"],
+            "event_name": event,
+            "path": str(path),
+        },
+    )
 
 
 class SessionStartRequest(BaseModel):
@@ -408,6 +492,7 @@ def session_start(payload: SessionStartRequest) -> Dict[str, Any]:
         "profile": payload.model_dump(),
         "drawing_task_prompt": drawing_task,
     }
+    persist_session_json(SESSIONS[session_id], "session_started")
     return {"session_id": session_id, "drawing_task": drawing_task}
 
 
@@ -415,6 +500,7 @@ def session_start(payload: SessionStartRequest) -> Dict[str, Any]:
 def caregiver_checklist(payload: ChecklistRequest) -> Dict[str, bool]:
     session = ensure_session(payload.session_id)
     session["checklist"] = payload.model_dump()
+    persist_session_json(session, "caregiver_checklist_saved")
     return {"saved": True}
 
 
@@ -435,6 +521,7 @@ def task_voice(payload: VoiceTaskRequest) -> dict:
     session["voice_signal"]["model"] = payload.model_name
     session["voice_signal"]["disclaimer"] = DISCLAIMER
     session["voice_prediction"] = voice_prediction
+    persist_session_json(session, "voice_metadata_scored")
     log_backend_json(
         "voice_metadata_score",
         {
@@ -479,8 +566,18 @@ async def task_voice_audio(
         "disclaimer": DISCLAIMER,
     }
     session = ensure_session(session_id)
+    session["voice_task"] = {
+        "session_id": session_id,
+        "picture_id": picture_id,
+        "image_prompt": image_prompt,
+        "filename": file.filename,
+        "audio_bytes_received": len(content),
+        "audio_content_type": file.content_type,
+        "submission_type": "audio_upload",
+    }
     session["voice_signal"] = signal
     session["voice_prediction"] = prediction
+    persist_session_json(session, "voice_audio_scored")
     log_backend_json(
         "voice_audio_score",
         {
@@ -771,6 +868,9 @@ def task_drawing(payload: DrawingTaskRequest) -> dict:
     signal = drawing_label_to_signal(label)
     session["drawing_task"] = payload.model_dump()
     session["drawing_signal"] = signal
+    session["drawing_model_label"] = label
+    session["drawing_model_source"] = source
+    persist_session_json(session, "drawing_task_saved")
     return {
         "saved": True,
         "drawing_signal": signal,
@@ -796,6 +896,9 @@ def task_drawing_score(payload: ClockDrawingScoreRequest) -> dict:
     if payload.session_id:
         session["drawing_score_payload"] = payload_dict
         session["drawing_score_result"] = result
+        if isinstance(result, dict) and result.get("signal_band"):
+            session["drawing_signal"] = drawing_label_to_signal(str(result["signal_band"]))
+        persist_session_json(session, "drawing_scored")
     return result
 
 
@@ -865,6 +968,7 @@ def score_memory_task(payload: MemoryScoreRequest) -> MemoryScoreResponse:
         round(accuracy * 100),
         summary,
     )
+    persist_session_json(session, "memory_scored")
     log_backend_json(
         "memory_score",
         {
@@ -886,6 +990,7 @@ def score_memory_task(payload: MemoryScoreRequest) -> MemoryScoreResponse:
 def score(payload: ScoreRequest) -> dict:
     session = ensure_session(payload.session_id)
     session["score"] = combine_score(session)
+    persist_session_json(session, "overall_score_generated")
     return session["score"]
 
 
@@ -893,6 +998,8 @@ def score(payload: ScoreRequest) -> dict:
 def report(session_id: str) -> str:
     session = ensure_session(session_id)
     summary = session.get("score", combine_score(session))
+    session["report_summary"] = summary
+    persist_session_json(session, "report_viewed")
     domains = "".join(
         f"<li><strong>{value['domain']}</strong>: {value['band']} - {value['reason']}</li>"
         for value in summary["domain_signals"].values()
