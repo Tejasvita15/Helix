@@ -76,9 +76,18 @@ type VoicePrediction = {
     model: string;
     task: string;
     picture_id: string;
+    user_score: number;
+    auralis_score_probability: number | null;
     language_domain_score: number;
     band: Band;
     risk_signal: Band;
+    average_time_taken_per_word_sec: number | null;
+    median_time_taken_per_word_sec: number | null;
+    p90_time_taken_per_word_sec: number | null;
+    average_gap_between_words_sec: number | null;
+    sentence_translated_by_whisper: string;
+    whisper_transcript: string;
+    image_prompt: string | null;
     features: {
       duration_sec: number;
       pause_count: number;
@@ -162,6 +171,7 @@ export default function App() {
   const recordingRef = useRef<Audio.Recording | null>(null);
   const startedAtRef = useRef<number | null>(null);
   const selectedPictureRef = useRef<StoryPicture>(selectedPicture);
+  const imagePromptRef = useRef<string | null>(null);
   const isCompact = width < 430;
   const horizontalPadding = isCompact ? 14 : 20;
   const contentWidth = Math.min(width - horizontalPadding * 2, 720);
@@ -198,6 +208,7 @@ export default function App() {
     const picture = await getPersonalizedPicture();
     setSelectedPicture(picture.picture);
     selectedPictureRef.current = picture.picture;
+    imagePromptRef.current = picture.imagePrompt;
     setImagePrompt(picture.imagePrompt);
   }
 
@@ -214,6 +225,7 @@ export default function App() {
 
       setSelectedPicture(randomPicture);
       selectedPictureRef.current = randomPicture;
+      imagePromptRef.current = pictureChoice.imagePrompt;
       setImagePrompt(pictureChoice.imagePrompt);
       setPrediction(null);
       setErrorMessage(null);
@@ -274,7 +286,7 @@ export default function App() {
       durationSec,
       audioUri,
       audioBlob,
-      imagePrompt,
+      imagePromptRef.current,
     );
     startedAtRef.current = null;
 
@@ -443,9 +455,18 @@ function buildLocalPrediction(payload: VoiceTaskPayload): VoicePrediction {
       model: payload.model_name,
       task: "picture_story_voice",
       picture_id: payload.picture_id,
+      user_score: score,
+      auralis_score_probability: null,
       language_domain_score: score,
       band,
       risk_signal: band,
+      average_time_taken_per_word_sec: null,
+      median_time_taken_per_word_sec: null,
+      p90_time_taken_per_word_sec: null,
+      average_gap_between_words_sec: null,
+      sentence_translated_by_whisper: payload.transcript,
+      whisper_transcript: payload.transcript,
+      image_prompt: payload.image_prompt,
       features: {
         duration_sec: payload.duration_sec,
         pause_count: payload.pause_count,

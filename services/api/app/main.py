@@ -147,6 +147,7 @@ class ScoreResponse(BaseModel):
 SESSIONS: dict[str, dict[str, object]] = {}
 CAREGIVER_CHECKLISTS: dict[str, CaregiverChecklistRequest] = {}
 VOICE_TASKS: dict[str, VoiceTaskResponse] = {}
+PICTURE_STORY_PROMPTS: dict[str, str] = {}
 
 
 @app.get("/health")
@@ -173,13 +174,30 @@ def caregiver_checklist(payload: CaregiverChecklistRequest) -> SavedResponse:
 @app.post("/task/voice")
 def voice_task(payload: VoiceTaskRequest) -> VoiceTaskResponse:
     signal = score_voice_task(payload)
+    image_prompt = payload.image_prompt or PICTURE_STORY_PROMPTS.get(payload.session_id)
+    word_timing_metrics = empty_word_timing_metrics()
     prediction = {
         "model": payload.model_name,
         "task": "picture_story_voice",
         "picture_id": payload.picture_id,
+        "user_score": signal.score,
+        "auralis_score_probability": None,
         "language_domain_score": signal.score,
         "band": signal.band,
         "risk_signal": signal.band,
+        "average_time_taken_per_word_sec": word_timing_metrics[
+            "average_time_taken_per_word_sec"
+        ],
+        "median_time_taken_per_word_sec": word_timing_metrics[
+            "median_time_taken_per_word_sec"
+        ],
+        "p90_time_taken_per_word_sec": word_timing_metrics[
+            "p90_time_taken_per_word_sec"
+        ],
+        "average_gap_between_words_sec": None,
+        "sentence_translated_by_whisper": payload.transcript,
+        "whisper_transcript": payload.transcript,
+        "image_prompt": image_prompt,
         "features": {
             "duration_sec": payload.duration_sec,
             "pause_count": payload.pause_count,
@@ -187,7 +205,6 @@ def voice_task(payload: VoiceTaskRequest) -> VoiceTaskResponse:
             "estimated_word_count": payload.estimated_word_count,
             "speech_rate_words_per_min": speech_rate(payload),
         },
-        "image_prompt": payload.image_prompt,
         "clinical_claim": "possible language-domain signal only",
         "disclaimer": signal.disclaimer,
     }
@@ -207,16 +224,38 @@ async def voice_task_audio(
     raw_prediction = await predict_audio_bytes(content, file.filename)
     transcription = await transcribe_audio_bytes(content, file.filename)
     signal = signal_from_auralis(raw_prediction)
+    resolved_image_prompt = image_prompt or PICTURE_STORY_PROMPTS.get(session_id)
+    word_timing_metrics = word_timing_metrics_from_transcription(transcription)
+    whisper_text = str(transcription.get("text") or "")
     prediction = {
         "model": MODEL_ID,
         "task": "picture_story_voice",
         "picture_id": picture_id,
+        "user_score": signal.score,
+        "auralis_score_probability": auralis_label_probability(
+            raw_prediction,
+            "dementia",
+        ),
         "language_domain_score": signal.score,
         "band": signal.band,
         "risk_signal": signal.band,
+        "average_time_taken_per_word_sec": word_timing_metrics[
+            "average_time_taken_per_word_sec"
+        ],
+        "median_time_taken_per_word_sec": word_timing_metrics[
+            "median_time_taken_per_word_sec"
+        ],
+        "p90_time_taken_per_word_sec": word_timing_metrics[
+            "p90_time_taken_per_word_sec"
+        ],
+        "average_gap_between_words_sec": transcription.get(
+            "average_gap_between_words_sec"
+        ),
+        "sentence_translated_by_whisper": whisper_text,
+        "whisper_transcript": whisper_text,
+        "image_prompt": resolved_image_prompt,
         "raw_model_output": raw_prediction,
         "transcription": transcription,
-        "image_prompt": image_prompt,
         "clinical_claim": "possible language-domain signal only",
         "disclaimer": signal.disclaimer,
     }
@@ -245,10 +284,12 @@ def personalized_picture(
             ),
         )
 
+    image_prompt = build_reminiscence_image_prompt(payload.details)
+    PICTURE_STORY_PROMPTS[payload.session_id] = image_prompt
     return PersonalizedPictureResponse(
         use_personalized_generation=True,
         generated_image_url=None,
-        image_prompt=build_reminiscence_image_prompt(payload.details),
+        image_prompt=image_prompt,
         fallback_picture_id=fallback_picture_id,
         safety_note=(
             "Generated reminiscence images should avoid medical claims, avoid "
@@ -482,6 +523,62 @@ def signal_from_auralis(raw_prediction: dict[str, object]) -> DomainSignal:
         reason=reason,
         model=MODEL_ID,
     )
+
+
+def auralis_label_probability(
+    raw_prediction: dict[str, object],
+    label: str,
+) -> float | None:
+    scores = raw_prediction.get("scores", [])
+    if not isinstance(scores, list):
+        return None
+
+    for item in scores:
+        if isinstance(item, dict) and item.get("label") == label:
+            return round(float(item.get("score", 0.0)), 4)
+
+    return None
+
+
+def empty_word_timing_metrics() -> dict[str, float | None]:
+    return {
+        "average_time_taken_per_word_sec": None,
+        "median_time_taken_per_word_sec": None,
+        "p90_time_taken_per_word_sec": None,
+    }
+
+
+def word_timing_metrics_from_transcription(
+    transcription: dict[str, object],
+) -> dict[str, float | None]:
+    words = transcription.get("words", [])
+    if not isinstance(words, list):
+        return empty_word_timing_metrics()
+
+    durations: list[float] = []
+    for word in words:
+        if not isinstance(word, dict):
+            continue
+        duration = word.get("duration_sec")
+        if isinstance(duration, int | float):
+            durations.append(float(duration))
+
+    if not durations:
+        return empty_word_timing_metrics()
+
+    durations.sort()
+    p90_index = min(len(durations) - 1, max(0, round((len(durations) - 1) * 0.9)))
+    midpoint = len(durations) // 2
+    if len(durations) % 2:
+        median_duration = durations[midpoint]
+    else:
+        median_duration = (durations[midpoint - 1] + durations[midpoint]) / 2
+
+    return {
+        "average_time_taken_per_word_sec": round(sum(durations) / len(durations), 3),
+        "median_time_taken_per_word_sec": round(median_duration, 3),
+        "p90_time_taken_per_word_sec": round(durations[p90_index], 3),
+    }
 
 
 def score_caregiver(session_id: str) -> DomainSignal:
