@@ -30,9 +30,14 @@ import {
   MTBadge,
   MTButton,
   MTCard,
+  MTChoiceCard,
   MTScreen,
   MTTextInput,
   mtColors,
+  mtFontWeight,
+  mtRadii,
+  mtSpacing,
+  mtType,
 } from "./src/ui";
 import {
   MindTrailHero,
@@ -1309,34 +1314,32 @@ export default function App() {
     return (
       <ScreenShell title="Choose your role" eyebrow="Welcome">
         <Text style={styles.body}>MindTrail adjusts the journey for the person checking in and the caregiver reviewing today’s summary.</Text>
-        <Pressable
-          accessibilityRole="button"
+        <MTChoiceCard
+          helper="Start today’s short check-in and brain activity."
+          minHeight={112}
           onPress={() => {
             setRole("patient");
             setScreen("profile");
           }}
-          style={[styles.roleCard, role === "patient" && styles.roleCardSelected]}
+          selected={role === "patient"}
+          title="Patient"
+          titleStyle={styles.roleTitle}
         >
-          <View style={styles.choiceCopy}>
-            <Text style={styles.roleTitle}>Patient</Text>
-            <Text style={styles.choiceHelper}>Start today’s short check-in and brain activity.</Text>
-          </View>
           <MTBadge label="Start" tone="primary" />
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
+        </MTChoiceCard>
+        <MTChoiceCard
+          helper="Review the patient journey and today’s report summary."
+          minHeight={112}
           onPress={() => {
             setRole("caregiver");
             setScreen("profile");
           }}
-          style={[styles.roleCard, role === "caregiver" && styles.roleCardSelected]}
+          selected={role === "caregiver"}
+          title="Caregiver"
+          titleStyle={styles.roleTitle}
         >
-          <View style={styles.choiceCopy}>
-            <Text style={styles.roleTitle}>Caregiver</Text>
-            <Text style={styles.choiceHelper}>Review the patient journey and today’s report summary.</Text>
-          </View>
           <MTBadge label="Review" tone="sage" />
-        </Pressable>
+        </MTChoiceCard>
       </ScreenShell>
     );
   }
@@ -1484,23 +1487,20 @@ export default function App() {
       <ScreenShell title="Short check-in" eyebrow="Step 2 of 6">
         <Text style={styles.body}>Mark anything that feels new, different, or worth mentioning today.</Text>
         {checklistLabels.map((item) => (
-          <Pressable
-            accessibilityRole="button"
+          <MTChoiceCard
+            helper={checklist[item.key] ? "Slight change from recent pattern" : "No urgent concern shown"}
             key={item.key}
             onPress={() => toggleChecklist(item.key)}
-            style={[styles.choiceCard, checklist[item.key] && styles.choiceCardSelected]}
+            selected={checklist[item.key]}
+            style={checklist[item.key] ? styles.warningChoiceCard : null}
+            title={item.label}
+            titleStyle={styles.choiceTitle}
           >
-            <View style={styles.choiceCopy}>
-              <Text style={styles.choiceTitle}>{item.label}</Text>
-              <Text style={styles.choiceHelper}>
-                {checklist[item.key] ? "Slight change from recent pattern" : "No urgent concern shown"}
-              </Text>
-            </View>
             <MTBadge
               label={checklist[item.key] ? "Noted" : "No"}
               tone={checklist[item.key] ? "warning" : "neutral"}
             />
-          </Pressable>
+          </MTChoiceCard>
         ))}
         <FieldLabel>Mood or personality change</FieldLabel>
         <View style={styles.segmentRow}>
