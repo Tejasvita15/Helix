@@ -18,6 +18,7 @@ export type MTScreenProps = {
   footer?: ReactNode;
   showLogo?: boolean;
   showTrail?: boolean;
+  scrollEnabled?: boolean;
   contentStyle?: StyleProp<ViewStyle>;
   shellStyle?: StyleProp<ViewStyle>;
 };
@@ -32,6 +33,7 @@ export function MTScreen({
   footer,
   showLogo = true,
   showTrail = true,
+  scrollEnabled = true,
   contentStyle,
   shellStyle,
 }: MTScreenProps) {
@@ -42,6 +44,7 @@ export function MTScreen({
         alwaysBounceVertical={false}
         contentContainerStyle={[styles.content, contentStyle]}
         keyboardShouldPersistTaps="handled"
+        scrollEnabled={scrollEnabled}
       >
         <View style={[styles.shell, shellStyle]}>
           {showTrail ? <TrailMotif style={styles.trailMotif} /> : null}

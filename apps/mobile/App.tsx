@@ -16,6 +16,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import type { ViewStyle } from "react-native";
 
 import {
   createHawkerMemoryTask,
@@ -207,6 +208,9 @@ type ChecklistKey =
 
 const DISCLAIMER =
   "This is not a diagnosis. Please discuss new or worsening concerns with a healthcare professional.";
+
+const drawingSurfaceWebStyle =
+  Platform.OS === "web" ? ({ touchAction: "none", userSelect: "none" } as unknown as ViewStyle) : null;
 
 const DEFAULT_DRAWING_TASK: DrawingTaskPrompt = {
   task_id: "clock_drawing",
@@ -580,10 +584,12 @@ function ScreenShell({
   title,
   eyebrow,
   children,
+  scrollEnabled = true,
 }: {
   title: string;
   eyebrow?: string;
   children: React.ReactNode;
+  scrollEnabled?: boolean;
 }) {
   const progress = parseProgress(eyebrow);
 
@@ -594,6 +600,7 @@ function ScreenShell({
       currentStep={progress?.currentStep}
       totalSteps={progress?.totalSteps}
       footer={<Text style={styles.disclaimer}>{DISCLAIMER}</Text>}
+      scrollEnabled={scrollEnabled}
     >
       {children}
     </MTScreen>
@@ -888,15 +895,19 @@ export default function App() {
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponderCapture: () => true,
         onMoveShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponderCapture: () => true,
         onPanResponderGrant: startStroke,
         onPanResponderMove: addPoint,
+        onPanResponderTerminationRequest: () => false,
         onPanResponderRelease: () => {
           isDrawingRef.current = false;
         },
         onPanResponderTerminate: () => {
           isDrawingRef.current = false;
         },
+        onShouldBlockNativeResponder: () => true,
       }),
     [drawingStartedAt, canvasDimensions.height, canvasDimensions.width],
   );
@@ -1682,10 +1693,10 @@ export default function App() {
 
   if (screen === "drawing") {
     return (
-      <ScreenShell title={drawingTask.instruction} eyebrow="Step 5 of 6">
+      <ScreenShell title={drawingTask.instruction} eyebrow="Step 5 of 6" scrollEnabled={false}>
         <View style={styles.canvasWrap}>
           <View
-            style={styles.canvas}
+            style={[styles.canvas, drawingSurfaceWebStyle]}
             onLayout={(event) => {
               const { width, height } = event.nativeEvent.layout;
               setCanvasDimensions({ width, height });
