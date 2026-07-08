@@ -1,5 +1,5 @@
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -311,14 +311,17 @@ function LineSegment({ start, end }: { start: Point; end: Point }) {
   const dy = end.y - start.y;
   const length = Math.max(1, Math.sqrt(dx * dx + dy * dy));
   const angle = `${Math.atan2(dy, dx)}rad`;
+  const midX = (start.x + end.x) / 2;
+  const midY = (start.y + end.y) / 2;
 
   return (
     <View
+      pointerEvents="none"
       style={[
         styles.strokeLine,
         {
-          left: start.x,
-          top: start.y - 2,
+          left: midX - length / 2,
+          top: midY - 2,
           width: length,
           transform: [{ rotate: angle }],
         },
@@ -373,6 +376,7 @@ export default function App() {
   const [drawingSignal, setDrawingSignal] = useState<Signal | null>(null);
   const [modelSource, setModelSource] = useState("");
   const [scoreSummary, setScoreSummary] = useState<ScoreSummary | null>(null);
+  const isDrawingRef = useRef(false);
   const canvasSize = 320;
 
   useEffect(() => {
@@ -389,15 +393,21 @@ export default function App() {
   const startStroke = (event: GestureResponderEvent) => {
     const { locationX, locationY } = event.nativeEvent;
     if (!isPointInsideCanvas(locationX, locationY)) {
+      isDrawingRef.current = false;
       return;
     }
+    isDrawingRef.current = true;
     const t = Date.now() - drawingStartedAt;
     setStrokes((current) => [...current, { points: [{ x: locationX, y: locationY, t }] }]);
   };
 
   const addPoint = (event: GestureResponderEvent) => {
+    if (!isDrawingRef.current) {
+      return;
+    }
     const { locationX, locationY } = event.nativeEvent;
     if (!isPointInsideCanvas(locationX, locationY)) {
+      isDrawingRef.current = false;
       return;
     }
     const t = Date.now() - drawingStartedAt;
@@ -423,6 +433,12 @@ export default function App() {
         onMoveShouldSetPanResponder: () => true,
         onPanResponderGrant: startStroke,
         onPanResponderMove: addPoint,
+        onPanResponderRelease: () => {
+          isDrawingRef.current = false;
+        },
+        onPanResponderTerminate: () => {
+          isDrawingRef.current = false;
+        },
       }),
     [drawingStartedAt, canvasDimensions.height, canvasDimensions.width],
   );
@@ -545,6 +561,7 @@ export default function App() {
   };
 
   const clearDrawing = () => {
+    isDrawingRef.current = false;
     setStrokes([]);
     setClearCount((count) => count + 1);
     setDrawingStartedAt(Date.now());
@@ -684,7 +701,7 @@ export default function App() {
             }}
             {...panResponder.panHandlers}
           >
-            <View style={styles.canvasGuide} />
+            <View pointerEvents="none" style={styles.canvasGuide} />
             {renderDrawing()}
           </View>
         </View>

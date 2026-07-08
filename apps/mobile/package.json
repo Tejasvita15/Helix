@@ -7,6 +7,7 @@
     "node": ">=20 <23"
   },
   "scripts": {
+    "prestart": "node -e \"const major=Number(process.versions.node.split('.')[0]); if (major < 20 || major >= 23) { console.error('MindTrail mobile requires Node >=20 and <23. Current Node: ' + process.version + '. Use Node 20 LTS or Node 22 LTS before running Expo.'); process.exit(1); }\"",
     "start": "expo start",
     "start:tunnel": "expo start --tunnel --clear",
     "start:lan": "expo start --lan --clear",
