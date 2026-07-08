@@ -19,6 +19,19 @@ for path in (ROOT_DIR, SERVICES_API_DIR):
 from app.main import app
 
 
+CNN_MODEL_PATH = (
+    ROOT_DIR
+    / "ml"
+    / "drawing"
+    / "clock_signal"
+    / "experiments"
+    / "cnn_baseline"
+    / "artifacts"
+    / "densenet121_clock_cnn.pt"
+)
+CNN_MODEL_INFO_PATH = CNN_MODEL_PATH.with_name("densenet121_model_info.json")
+
+
 def start_demo_session(client: TestClient) -> dict:
     response = client.post(
         "/session/start",
@@ -73,6 +86,28 @@ def complete_clock_strokes() -> list[dict]:
     ]
 
 
+class temporary_env:
+    def __init__(self, updates: dict[str, str | None]) -> None:
+        self.updates = updates
+        self.previous: dict[str, str | None] = {}
+
+    def __enter__(self) -> "temporary_env":
+        for key, value in self.updates.items():
+            self.previous[key] = os.environ.get(key)
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        for key, value in self.previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
 def main() -> None:
     client = TestClient(app)
     session = start_demo_session(client)
@@ -83,46 +118,51 @@ def main() -> None:
     next_session = start_demo_session(client)
     assert next_session["drawing_task"]["instruction"] != session["drawing_task"]["instruction"]
 
-    valid_response = client.post("/task/drawing/score", json=payload)
+    with temporary_env({"CLOCK_SCORER_BACKEND": None}):
+        valid_response = client.post("/task/drawing/score", json=payload)
     valid_response.raise_for_status()
     valid_payload = valid_response.json()
     assert valid_payload["task"] == "clock_drawing"
     assert valid_payload["task_completed"] is True
     assert valid_payload["signal_band"] in {"low_signal", "medium_signal", "higher_signal", "uncertain"}
+    assert valid_payload["scoring_mode"] == "image_baseline_v0"
 
-    two_point_response = client.post(
-        "/task/drawing/score",
-        json=build_clock_payload(
-            session,
-            strokes=[
-                {
-                    "points": [
-                        {"x": 100, "y": 120, "t": 0},
-                        {"x": 101, "y": 121, "t": 16},
-                    ]
-                }
-            ],
-        ),
-    )
+    with temporary_env({"CLOCK_SCORER_BACKEND": "hog"}):
+        two_point_response = client.post(
+            "/task/drawing/score",
+            json=build_clock_payload(
+                session,
+                strokes=[
+                    {
+                        "points": [
+                            {"x": 100, "y": 120, "t": 0},
+                            {"x": 101, "y": 121, "t": 16},
+                        ]
+                    }
+                ],
+            ),
+        )
     two_point_response.raise_for_status()
     two_point_payload = two_point_response.json()
     assert two_point_payload["task_completed"] is False
     assert two_point_payload["signal_band"] == "uncertain"
     assert two_point_payload["reason"] == "too_few_points"
 
-    empty_response = client.post(
-        "/task/drawing/score",
-        json=build_clock_payload(session, strokes=[]),
-    )
+    with temporary_env({"CLOCK_SCORER_BACKEND": "hog"}):
+        empty_response = client.post(
+            "/task/drawing/score",
+            json=build_clock_payload(session, strokes=[]),
+        )
     empty_response.raise_for_status()
     empty_payload = empty_response.json()
     assert empty_payload["task_completed"] is False
     assert empty_payload["signal_band"] == "uncertain"
 
-    invalid_canvas_response = client.post(
-        "/task/drawing/score",
-        json=build_clock_payload(session, canvas={"width": 0, "height": 320}),
-    )
+    with temporary_env({"CLOCK_SCORER_BACKEND": "hog"}):
+        invalid_canvas_response = client.post(
+            "/task/drawing/score",
+            json=build_clock_payload(session, canvas={"width": 0, "height": 320}),
+        )
     invalid_canvas_response.raise_for_status()
     invalid_canvas_payload = invalid_canvas_response.json()
     assert invalid_canvas_payload["task_completed"] is False
@@ -130,19 +170,49 @@ def main() -> None:
     assert invalid_canvas_payload["reason"] == "invalid_canvas"
 
     with TemporaryDirectory() as temp_dir:
-        old_model_path = os.environ.get("CLOCK_SIGNAL_MODEL_PATH")
-        os.environ["CLOCK_SIGNAL_MODEL_PATH"] = str(Path(temp_dir) / "missing.joblib")
-        try:
+        with temporary_env(
+            {
+                "CLOCK_SCORER_BACKEND": "hog",
+                "CLOCK_SIGNAL_MODEL_PATH": str(Path(temp_dir) / "missing.joblib"),
+            }
+        ):
             missing_model_response = client.post("/task/drawing/score", json=payload)
-            missing_model_response.raise_for_status()
-            missing_model_payload = missing_model_response.json()
-            assert missing_model_payload["task_completed"] is False
-            assert missing_model_payload["signal_band"] == "uncertain"
-        finally:
-            if old_model_path is None:
-                os.environ.pop("CLOCK_SIGNAL_MODEL_PATH", None)
-            else:
-                os.environ["CLOCK_SIGNAL_MODEL_PATH"] = old_model_path
+        missing_model_response.raise_for_status()
+        missing_model_payload = missing_model_response.json()
+        assert missing_model_payload["task_completed"] is False
+        assert missing_model_payload["signal_band"] == "uncertain"
+
+    with TemporaryDirectory() as temp_dir:
+        with temporary_env(
+            {
+                "CLOCK_SCORER_BACKEND": "cnn",
+                "CLOCK_CNN_MODEL_PATH": str(Path(temp_dir) / "missing_cnn.pt"),
+                "CLOCK_CNN_MODEL_INFO_PATH": str(Path(temp_dir) / "missing_cnn_info.json"),
+            }
+        ):
+            missing_cnn_response = client.post("/task/drawing/score", json=payload)
+        missing_cnn_response.raise_for_status()
+        missing_cnn_payload = missing_cnn_response.json()
+        assert missing_cnn_payload["task_completed"] is False
+        assert missing_cnn_payload["signal_band"] == "uncertain"
+        assert missing_cnn_payload["reason"] == "cnn_model_unavailable"
+        assert missing_cnn_payload["scoring_mode"] == "cnn_densenet121_experimental"
+
+    if CNN_MODEL_PATH.exists() and CNN_MODEL_INFO_PATH.exists():
+        with temporary_env(
+            {
+                "CLOCK_SCORER_BACKEND": "cnn",
+                "CLOCK_CNN_MODEL_PATH": str(CNN_MODEL_PATH),
+                "CLOCK_CNN_MODEL_INFO_PATH": str(CNN_MODEL_INFO_PATH),
+                "CLOCK_CNN_DEVICE": "cpu",
+            }
+        ):
+            cnn_response = client.post("/task/drawing/score", json=payload)
+        cnn_response.raise_for_status()
+        cnn_payload = cnn_response.json()
+        assert cnn_payload["task"] == "clock_drawing"
+        assert cnn_payload["signal_band"] in {"low_signal", "medium_signal", "higher_signal", "uncertain"}
+        assert cnn_payload["scoring_mode"] == "cnn_densenet121_experimental"
 
     print("drawing score endpoint smoke checks passed")
 

@@ -135,6 +135,17 @@ Scores a Clock Drawing stroke payload using the MindTrail-owned drawing signal
 adapter. This endpoint is product-facing and accepts the mobile stroke JSON
 shape.
 
+Backend scorer configuration is controlled by environment variables:
+
+- `CLOCK_SCORER_BACKEND`: `hog` by default. Set to `cnn` to use the experimental DenseNet121 CNN scorer.
+- `CLOCK_SIGNAL_MODEL_PATH`: optional path for the HOG/logistic `.joblib` artifact.
+- `CLOCK_CNN_MODEL_PATH`: optional path for the DenseNet121 CNN `.pt` artifact. Defaults to `ml/drawing/clock_signal/experiments/cnn_baseline/artifacts/densenet121_clock_cnn.pt`.
+- `CLOCK_CNN_MODEL_INFO_PATH`: optional path for the DenseNet121 CNN model-info JSON. Defaults to `ml/drawing/clock_signal/experiments/cnn_baseline/artifacts/densenet121_model_info.json`.
+- `CLOCK_SIGNAL_THRESHOLD`: optional confidence threshold. Defaults to `0.60`.
+
+The default backend remains HOG/logistic. The CNN backend is experimental and
+must be enabled explicitly.
+
 Request:
 
 ```json
@@ -181,6 +192,10 @@ Response:
 If the canvas or stroke data is incomplete, or the model cannot be loaded, the
 endpoint returns `task_completed: false` and `signal_band: "uncertain"` rather
 than exposing backend error details.
+
+If `CLOCK_SCORER_BACKEND=cnn` is set but the CNN artifacts are unavailable, the
+endpoint returns a safe uncertain result with `reason: "cnn_model_unavailable"`
+and `scoring_mode: "cnn_densenet121_experimental"`.
 
 Incomplete drawing payloads are not sent to the model. The current completion
 thresholds are:

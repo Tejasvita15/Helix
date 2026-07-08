@@ -84,7 +84,7 @@ def load_cnn_model(
         mean=mean,
         std=std,
         model_version=str(model_info.get("model_version") or f"{model_name}_clock_cnn_v0"),
-        scoring_mode=str(model_info.get("scoring_mode") or f"cnn_{model_name}_experimental"),
+        scoring_mode=_resolve_scoring_mode(model_name, model_info),
     )
 
 
@@ -172,6 +172,13 @@ def _resolve_model_name(model_path: Path, checkpoint: Any, model_info: dict[str,
         "Could not infer CNN architecture. Provide model_info with model_name "
         f"one of: {', '.join(SUPPORTED_MODELS)}."
     )
+
+
+def _resolve_scoring_mode(model_name: str, model_info: dict[str, Any]) -> str:
+    scoring_mode = model_info.get("scoring_mode")
+    if isinstance(scoring_mode, str) and scoring_mode and scoring_mode != "experimental_cnn_baseline":
+        return scoring_mode
+    return f"cnn_{model_name}_experimental"
 
 
 def _model_name_candidates_from_path(path: Path) -> list[str]:
