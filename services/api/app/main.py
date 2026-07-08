@@ -667,7 +667,14 @@ async def predict_audio_bytes(content: bytes, filename: str | None) -> dict[str,
 
         return get_auralis_model().predict_path(temp_path)
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"Auralis unavailable: {exc}") from exc
+        return {
+            "model": "Auralis/NatHACKS_Auralis",
+            "loaded": False,
+            "warning": f"Auralis unavailable: {exc}",
+            "top_label": "unavailable",
+            "top_score": None,
+            "scores": [],
+        }
     finally:
         temp_path.unlink(missing_ok=True)
 
@@ -697,6 +704,21 @@ async def transcribe_audio_bytes(content: bytes, filename: str | None) -> dict[s
 
 
 def signal_from_auralis(raw_prediction: dict[str, object]) -> dict:
+    if raw_prediction.get("loaded") is False:
+        signal = signal_payload(
+            "language",
+            "amber",
+            50,
+            (
+                "Audio was received, but the Auralis model was not available locally. "
+                "This response is an uncertain language-domain fallback, not a diagnosis."
+            ),
+        )
+        signal["model"] = "Auralis/NatHACKS_Auralis"
+        signal["warning"] = raw_prediction.get("warning")
+        signal["disclaimer"] = DISCLAIMER
+        return signal
+
     audio_quality = raw_prediction.get("audio_quality")
     if isinstance(audio_quality, dict) and audio_quality.get("is_silent") is True:
         signal = signal_payload(
