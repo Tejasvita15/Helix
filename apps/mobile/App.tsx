@@ -71,6 +71,7 @@ type VoiceTaskPayload = {
   audio_uri: string | null;
   audio_blob?: Blob;
   model_name: string;
+  image_prompt?: string | null;
 };
 
 type VoicePrediction = {
@@ -359,6 +360,9 @@ async function submitVoiceTask(payload: VoiceTaskPayload): Promise<VoicePredicti
       const formData = new FormData();
       formData.append("session_id", payload.session_id);
       formData.append("picture_id", payload.picture_id);
+      if (payload.image_prompt) {
+        formData.append("image_prompt", payload.image_prompt);
+      }
 
       if (payload.audio_blob) {
         formData.append("file", payload.audio_blob, "voice-task.wav");

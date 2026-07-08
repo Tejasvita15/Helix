@@ -10,7 +10,7 @@ from time import time
 from typing import Any, Dict, List, Literal, Optional, Tuple
 from uuid import uuid4
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
@@ -101,6 +101,7 @@ class VoiceTaskRequest(BaseModel):
     transcript: str = ""
     audio_uri: Optional[str] = None
     model_name: str = "Auralis/NatHACKS_Auralis"
+    image_prompt: Optional[str] = None
 
 
 class DrawingPoint(BaseModel):
@@ -455,8 +456,9 @@ def task_voice(payload: VoiceTaskRequest) -> dict:
 
 @app.post("/task/voice/audio")
 async def task_voice_audio(
-    session_id: str = "demo-session-001",
-    picture_id: str = "demo-picture",
+    session_id: str = Form("demo-session-001"),
+    picture_id: str = Form("demo-picture"),
+    image_prompt: str | None = Form(None),
     file: UploadFile = File(...),
 ) -> dict:
     content = await file.read()
@@ -467,6 +469,7 @@ async def task_voice_audio(
         "model": "Auralis/NatHACKS_Auralis",
         "task": "picture_story_voice",
         "picture_id": picture_id,
+        "image_prompt": image_prompt,
         "language_domain_score": signal["score"],
         "band": signal["band"],
         "risk_signal": signal["band"],
@@ -483,6 +486,7 @@ async def task_voice_audio(
         {
             "session_id": session_id,
             "picture_id": picture_id,
+            "image_prompt": image_prompt,
             "filename": file.filename,
             "voice_band": signal.get("band"),
             "voice_score": signal.get("score"),
