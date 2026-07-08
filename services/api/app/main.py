@@ -91,6 +91,38 @@ def session_log_path(session_id: str) -> Path:
     return SESSION_LOG_DIR / f"{safe_session_id}.json"
 
 
+def drawing_payload_without_coordinates(payload: object) -> object:
+    if not isinstance(payload, dict):
+        return payload
+
+    sanitized = dict(payload)
+    strokes = sanitized.pop("strokes", [])
+    if isinstance(strokes, list):
+        point_count = 0
+        stroke_point_counts: list[int] = []
+        for stroke in strokes:
+            points = []
+            if isinstance(stroke, dict):
+                points = stroke.get("points", [])
+            elif isinstance(stroke, list):
+                points = stroke
+            count = len(points) if isinstance(points, list) else 0
+            point_count += count
+            stroke_point_counts.append(count)
+        sanitized["stroke_count"] = len(strokes)
+        sanitized["point_count"] = point_count
+        sanitized["stroke_point_counts"] = stroke_point_counts
+    return sanitized
+
+
+def session_without_coordinates(session: dict) -> dict:
+    sanitized = dict(session)
+    for key in ("drawing_score_payload", "drawing_task"):
+        if key in sanitized:
+            sanitized[key] = drawing_payload_without_coordinates(sanitized[key])
+    return sanitized
+
+
 def session_llm_context(session: dict) -> dict[str, object]:
     voice_prediction = session.get("voice_prediction") or {}
     voice_task = session.get("voice_task") or {}
@@ -123,9 +155,15 @@ def session_llm_context(session: dict) -> dict[str, object]:
         },
         "drawing_task": {
             "prompt": session.get("drawing_task_prompt"),
-            "payload": session.get("drawing_score_payload") or session.get("drawing_task"),
+            "payload": drawing_payload_without_coordinates(
+                session.get("drawing_score_payload") or session.get("drawing_task")
+            ),
             "result": drawing_result,
             "signal": session.get("drawing_signal"),
+            "notes_for_llm": [
+                "Raw drawing coordinates are intentionally omitted from session JSON.",
+                "Use stroke_count, point_count, stroke_point_counts, metadata, and model result for analysis.",
+            ],
         },
         "overall_score": score,
         "llm_analysis_guardrails": [
@@ -144,7 +182,7 @@ def persist_session_json(session: dict, event: str) -> None:
     snapshot = {
         "schema_version": "mindtrail_session_log_v1",
         "event": event,
-        "session": session,
+        "session": session_without_coordinates(session),
         "llm_context": session_llm_context(session),
     }
     path = session_log_path(str(session["session_id"]))
