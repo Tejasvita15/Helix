@@ -129,6 +129,84 @@ Response:
 }
 ```
 
+## POST /task/drawing/score
+
+Scores a Clock Drawing stroke payload using the MindTrail-owned drawing signal
+adapter. This endpoint is product-facing and accepts the mobile stroke JSON
+shape.
+
+Request:
+
+```json
+{
+  "task_id": "clock_drawing",
+  "instruction": "Draw a clock showing 10 past 11.",
+  "canvas": {
+    "width": 320,
+    "height": 320
+  },
+  "strokes": [
+    {
+      "points": [
+        { "x": 100, "y": 120, "t": 0 },
+        { "x": 101, "y": 121, "t": 16 }
+      ]
+    }
+  ],
+  "metadata": {
+    "completion_time_ms": 42000,
+    "clear_count": 1,
+    "undo_count": 0,
+    "device": "mobile"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "task": "clock_drawing",
+  "task_completed": true,
+  "signal_band": "uncertain",
+  "confidence": 0.0,
+  "domains": ["visuospatial", "planning"],
+  "explanation": "The clock task could not be scored reliably. This is not a diagnosis.",
+  "report_summary": "Clock drawing task result is uncertain. Consider retrying or reviewing with a caregiver or GP if concerns persist.",
+  "model_version": "clock_signal_baseline_v0",
+  "scoring_mode": "image_baseline_v0"
+}
+```
+
+If the canvas or stroke data is incomplete, or the model cannot be loaded, the
+endpoint returns `task_completed: false` and `signal_band: "uncertain"` rather
+than exposing backend error details.
+
+Incomplete drawing payloads are not sent to the model. The current completion
+thresholds are:
+
+- Canvas width and height must be greater than `0`.
+- At least `20` valid in-canvas points.
+- At least one stroke with `2` or more valid in-canvas points.
+- At least `80` pixels of total ink length in original canvas coordinates.
+
+Incomplete response example:
+
+```json
+{
+  "task": "clock_drawing",
+  "task_completed": false,
+  "signal_band": "uncertain",
+  "confidence": 0.0,
+  "domains": ["visuospatial", "planning"],
+  "explanation": "The drawing was too incomplete to score reliably. Please try the task again.",
+  "report_summary": "Clock drawing task was incomplete or could not be scored reliably.",
+  "model_version": "clock_signal_baseline_v0",
+  "scoring_mode": "image_baseline_v0",
+  "reason": "too_few_points"
+}
+```
+
 ## POST /score
 
 Combines all available signals.

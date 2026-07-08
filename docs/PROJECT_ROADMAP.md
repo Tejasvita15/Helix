@@ -121,6 +121,12 @@ Done when:
 - Backend generates one-page report.
 - Report includes task summary, domain signals, caregiver concerns, next steps, and disclaimer.
 
+## Post-MVP polish
+
+- Add voice-guided instructions for each task so users can follow the flow without relying only on screen text.
+- Add multilingual support for English, Mandarin, Malay, and Tamil across task instructions, consent copy, and report summaries.
+- Improve caregiver/GP report output with clearer task evidence, caregiver context, and follow-up prompts while keeping all wording non-diagnostic.
+
 ## MVP success criteria
 
 The demo is successful if a judge can understand:

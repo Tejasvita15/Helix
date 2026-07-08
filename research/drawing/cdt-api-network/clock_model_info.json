@@ -1,0 +1,14 @@
+{
+  "image_size": 128,
+  "label_type": "signal_group",
+  "classes": [
+    "higher_signal",
+    "low_signal",
+    "medium_signal"
+  ],
+  "mapping": {
+    "scores_4_5": "low_signal",
+    "score_3": "medium_signal",
+    "scores_0_1_2": "higher_signal"
+  }
+}

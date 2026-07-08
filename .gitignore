@@ -21,6 +21,7 @@ env/
 *.db
 *.sqlite
 *.sqlite3
+services/api/session_logs/
 
 # Node / Expo
 node_modules/
@@ -56,3 +57,4 @@ data/restricted/
 # Local clock-drawing research datasets and external reference repos
 research/drawing/cdt-api-network/clock_shulman
 research/drawing/trebledawson-alzheimers-clock-drawing/
+ml/drawing/clock_signal/experiments/cnn_baseline/artifacts/*_clock_cnn.pt
