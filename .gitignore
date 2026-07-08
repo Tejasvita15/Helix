@@ -35,6 +35,7 @@ web-build/
 apps/mobile/.nvmrc
 apps/mobile/.watchmanconfig
 apps/mobile/metro.config.js
+apps/mobile/assets/hawker/_originals/
 
 # Mobile native build outputs
 apps/mobile/android/
