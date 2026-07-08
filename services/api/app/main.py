@@ -75,6 +75,10 @@ def log_backend_json(event: str, payload: dict[str, object]) -> None:
     print(json.dumps({"event": event, **payload}, sort_keys=True), flush=True)
 
 
+def should_try_repo_root_import(exc: ModuleNotFoundError) -> bool:
+    return exc.name == "app"
+
+
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -608,7 +612,9 @@ async def transcribe_whisper(file: UploadFile = File(...)) -> dict[str, object]:
     try:
         try:
             from app.whisper_service import transcribe_upload
-        except ModuleNotFoundError:
+        except ModuleNotFoundError as exc:
+            if not should_try_repo_root_import(exc):
+                raise
             from services.api.app.whisper_service import transcribe_upload
     except Exception as exc:
         log_backend_json(
@@ -642,7 +648,9 @@ def auralis_status() -> dict[str, object]:
     try:
         try:
             from app.auralis_model import MODEL_ID, get_auralis_model
-        except ModuleNotFoundError:
+        except ModuleNotFoundError as exc:
+            if not should_try_repo_root_import(exc):
+                raise
             from services.api.app.auralis_model import MODEL_ID, get_auralis_model
 
         model = get_auralis_model()
@@ -674,7 +682,9 @@ def whisper_status() -> dict[str, object]:
     try:
         try:
             from app.whisper_service import WHISPER_MODEL_SIZE, get_whisper_transcriber
-        except ModuleNotFoundError:
+        except ModuleNotFoundError as exc:
+            if not should_try_repo_root_import(exc):
+                raise
             from services.api.app.whisper_service import WHISPER_MODEL_SIZE, get_whisper_transcriber
 
         get_whisper_transcriber()
@@ -763,7 +773,9 @@ async def predict_audio_bytes(content: bytes, filename: str | None) -> dict[str,
     try:
         try:
             from app.auralis_model import get_auralis_model
-        except ModuleNotFoundError:
+        except ModuleNotFoundError as exc:
+            if not should_try_repo_root_import(exc):
+                raise
             from services.api.app.auralis_model import get_auralis_model
 
         return get_auralis_model().predict_path(temp_path)
@@ -789,7 +801,9 @@ async def transcribe_audio_bytes(content: bytes, filename: str | None) -> dict[s
     try:
         try:
             from app.whisper_service import get_whisper_transcriber
-        except ModuleNotFoundError:
+        except ModuleNotFoundError as exc:
+            if not should_try_repo_root_import(exc):
+                raise
             from services.api.app.whisper_service import get_whisper_transcriber
 
         return get_whisper_transcriber().transcribe_path(temp_path)
