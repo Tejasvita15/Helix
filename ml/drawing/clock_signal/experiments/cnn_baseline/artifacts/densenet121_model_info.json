@@ -1,0 +1,135 @@
+{
+  "batch_size": 32,
+  "classes": [
+    "low_signal",
+    "medium_signal",
+    "higher_signal"
+  ],
+  "created_at_utc": "2026-07-07T13:12:16.064260+00:00",
+  "dataset_source": "research/drawing/cdt-api-network/clock_shulman.zip",
+  "device": "cuda",
+  "epochs": 12,
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 0.77049,
+      "validation": {
+        "accuracy": 0.729904,
+        "balanced_accuracy": 0.724392,
+        "macro_f1": 0.715224
+      }
+    },
+    {
+      "epoch": 2,
+      "train_loss": 0.536446,
+      "validation": {
+        "accuracy": 0.786174,
+        "balanced_accuracy": 0.784441,
+        "macro_f1": 0.793996
+      }
+    },
+    {
+      "epoch": 3,
+      "train_loss": 0.421549,
+      "validation": {
+        "accuracy": 0.784566,
+        "balanced_accuracy": 0.749733,
+        "macro_f1": 0.774487
+      }
+    },
+    {
+      "epoch": 4,
+      "train_loss": 0.375065,
+      "validation": {
+        "accuracy": 0.744373,
+        "balanced_accuracy": 0.762263,
+        "macro_f1": 0.742228
+      }
+    },
+    {
+      "epoch": 5,
+      "train_loss": 0.308802,
+      "validation": {
+        "accuracy": 0.810289,
+        "balanced_accuracy": 0.789716,
+        "macro_f1": 0.808386
+      }
+    },
+    {
+      "epoch": 6,
+      "train_loss": 0.270741,
+      "validation": {
+        "accuracy": 0.78135,
+        "balanced_accuracy": 0.74936,
+        "macro_f1": 0.768145
+      }
+    },
+    {
+      "epoch": 7,
+      "train_loss": 0.251138,
+      "validation": {
+        "accuracy": 0.776527,
+        "balanced_accuracy": 0.75975,
+        "macro_f1": 0.766259
+      }
+    },
+    {
+      "epoch": 8,
+      "train_loss": 0.200205,
+      "validation": {
+        "accuracy": 0.79582,
+        "balanced_accuracy": 0.779918,
+        "macro_f1": 0.790163
+      }
+    },
+    {
+      "epoch": 9,
+      "train_loss": 0.167946,
+      "validation": {
+        "accuracy": 0.771704,
+        "balanced_accuracy": 0.777454,
+        "macro_f1": 0.781196
+      }
+    },
+    {
+      "epoch": 10,
+      "train_loss": 0.148599,
+      "validation": {
+        "accuracy": 0.779743,
+        "balanced_accuracy": 0.788192,
+        "macro_f1": 0.774454
+      }
+    },
+    {
+      "epoch": 11,
+      "train_loss": 0.138467,
+      "validation": {
+        "accuracy": 0.779743,
+        "balanced_accuracy": 0.748891,
+        "macro_f1": 0.768524
+      }
+    },
+    {
+      "epoch": 12,
+      "train_loss": 0.095091,
+      "validation": {
+        "accuracy": 0.657556,
+        "balanced_accuracy": 0.715872,
+        "macro_f1": 0.69936
+      }
+    }
+  ],
+  "image_size": 224,
+  "intended_output": "Visual clock drawing signal only.",
+  "lr": 0.0001,
+  "model_name": "densenet121",
+  "model_type": "densenet121 transfer-learning CNN",
+  "scope_note": "This experimental CNN scores general clock drawing quality and does not validate prompt-specific hand time correctness.",
+  "seed": 42,
+  "split_metadata_path": "ml/drawing/clock_signal/experiments/cnn_baseline/artifacts/densenet121_split_metadata.json",
+  "weights_status": {
+    "pretrained_loaded": true,
+    "pretrained_requested": true,
+    "weights": "DenseNet121_Weights.IMAGENET1K_V1"
+  }
+}

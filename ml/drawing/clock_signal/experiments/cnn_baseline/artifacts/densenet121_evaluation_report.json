@@ -1,0 +1,124 @@
+{
+  "classes": [
+    "low_signal",
+    "medium_signal",
+    "higher_signal"
+  ],
+  "model_info_path": "ml/drawing/clock_signal/experiments/cnn_baseline/artifacts/densenet121_model_info.json",
+  "model_path": "ml/drawing/clock_signal/experiments/cnn_baseline/artifacts/densenet121_clock_cnn.pt",
+  "split_metadata_path": "ml/drawing/clock_signal/experiments/cnn_baseline/artifacts/densenet121_split_metadata.json",
+  "test": {
+    "classification_report": {
+      "accuracy": 0.7733118971061094,
+      "higher_signal": {
+        "f1-score": 0.8192771084337349,
+        "precision": 0.8717948717948718,
+        "recall": 0.7727272727272727,
+        "support": 88.0
+      },
+      "low_signal": {
+        "f1-score": 0.8252569750367107,
+        "precision": 0.7893258426966292,
+        "recall": 0.8646153846153846,
+        "support": 325.0
+      },
+      "macro avg": {
+        "f1-score": 0.7698404963373356,
+        "precision": 0.7877494580219896,
+        "recall": 0.7563072015703595,
+        "support": 622.0
+      },
+      "medium_signal": {
+        "f1-score": 0.6649874055415617,
+        "precision": 0.7021276595744681,
+        "recall": 0.631578947368421,
+        "support": 209.0
+      },
+      "weighted avg": {
+        "f1-score": 0.770558312198209,
+        "precision": 0.7716937756357187,
+        "recall": 0.7733118971061094,
+        "support": 622.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        281,
+        41,
+        3
+      ],
+      [
+        70,
+        132,
+        7
+      ],
+      [
+        5,
+        15,
+        68
+      ]
+    ],
+    "metrics": {
+      "accuracy": 0.773312,
+      "balanced_accuracy": 0.756307,
+      "macro_f1": 0.76984
+    }
+  },
+  "validation": {
+    "classification_report": {
+      "accuracy": 0.8102893890675241,
+      "higher_signal": {
+        "f1-score": 0.8571428571428571,
+        "precision": 0.9324324324324325,
+        "recall": 0.7931034482758621,
+        "support": 87.0
+      },
+      "low_signal": {
+        "f1-score": 0.8558951965065502,
+        "precision": 0.8121546961325967,
+        "recall": 0.9046153846153846,
+        "support": 325.0
+      },
+      "macro avg": {
+        "f1-score": 0.8083864219235398,
+        "precision": 0.8342172148980205,
+        "recall": 0.7897158014399394,
+        "support": 622.0
+      },
+      "medium_signal": {
+        "f1-score": 0.7121212121212122,
+        "precision": 0.7580645161290323,
+        "recall": 0.6714285714285714,
+        "support": 210.0
+      },
+      "weighted avg": {
+        "f1-score": 0.8075286527033954,
+        "precision": 0.8107161515302449,
+        "recall": 0.8102893890675241,
+        "support": 622.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        294,
+        30,
+        1
+      ],
+      [
+        65,
+        141,
+        4
+      ],
+      [
+        3,
+        15,
+        69
+      ]
+    ],
+    "metrics": {
+      "accuracy": 0.810289,
+      "balanced_accuracy": 0.789716,
+      "macro_f1": 0.808386
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "accuracy_on_sample": 0.929204,
+  "folder_counts": {
+    "0_no_clock": 13,
+    "1_severe_vis": 20,
+    "2_mod_vis_xhands": 20,
+    "3_hands_vis_errors": 20,
+    "4_minor_VIS_errors": 20,
+    "5_perfect_clock": 20
+  },
+  "matched_count": 105,
+  "model_path": "/Users/swarangisatpute/Desktop/NTU_Academics/Projects/HealthAI Hackathon/Helix/ml/drawing/clock_signal/artifacts/clock_signal_baseline.joblib",
+  "most_common_confusions": [
+    {
+      "count": 3,
+      "predicted_signal": "medium_signal",
+      "true_signal": "higher_signal"
+    },
+    {
+      "count": 2,
+      "predicted_signal": "medium_signal",
+      "true_signal": "low_signal"
+    },
+    {
+      "count": 2,
+      "predicted_signal": "low_signal",
+      "true_signal": "medium_signal"
+    },
+    {
+      "count": 1,
+      "predicted_signal": "higher_signal",
+      "true_signal": "medium_signal"
+    }
+  ],
+  "prediction_counts": {
+    "higher_signal": 71,
+    "low_signal": 20,
+    "medium_signal": 22,
+    "uncertain": 0
+  },
+  "random_state": 42,
+  "recommended_default_threshold": 0.5,
+  "sample_count": 113,
+  "samples_per_folder_requested": 20,
+  "true_signal_counts": {
+    "higher_signal": 73,
+    "low_signal": 20,
+    "medium_signal": 20,
+    "uncertain": 0
+  },
+  "zip_path": "/Users/swarangisatpute/Desktop/NTU_Academics/Projects/HealthAI Hackathon/Helix/research/drawing/cdt-api-network/clock_shulman.zip"
+}

@@ -1,0 +1,67 @@
+[
+  {
+    "coverage_percentage": 100.0,
+    "macro_f1_non_uncertain": 0.893915,
+    "non_uncertain_count": 113,
+    "per_class_recall": {
+      "higher_signal": 0.958904,
+      "low_signal": 0.9,
+      "medium_signal": 0.85
+    },
+    "threshold": 0.5,
+    "uncertain_count": 0,
+    "uncertain_percentage": 0.0
+  },
+  {
+    "coverage_percentage": 100.0,
+    "macro_f1_non_uncertain": 0.893915,
+    "non_uncertain_count": 113,
+    "per_class_recall": {
+      "higher_signal": 0.958904,
+      "low_signal": 0.9,
+      "medium_signal": 0.85
+    },
+    "threshold": 0.55,
+    "uncertain_count": 0,
+    "uncertain_percentage": 0.0
+  },
+  {
+    "coverage_percentage": 100.0,
+    "macro_f1_non_uncertain": 0.893915,
+    "non_uncertain_count": 113,
+    "per_class_recall": {
+      "higher_signal": 0.958904,
+      "low_signal": 0.9,
+      "medium_signal": 0.85
+    },
+    "threshold": 0.6,
+    "uncertain_count": 0,
+    "uncertain_percentage": 0.0
+  },
+  {
+    "coverage_percentage": 99.115,
+    "macro_f1_non_uncertain": 0.893785,
+    "non_uncertain_count": 112,
+    "per_class_recall": {
+      "higher_signal": 0.958333,
+      "low_signal": 0.9,
+      "medium_signal": 0.85
+    },
+    "threshold": 0.65,
+    "uncertain_count": 1,
+    "uncertain_percentage": 0.885
+  },
+  {
+    "coverage_percentage": 99.115,
+    "macro_f1_non_uncertain": 0.893785,
+    "non_uncertain_count": 112,
+    "per_class_recall": {
+      "higher_signal": 0.958333,
+      "low_signal": 0.9,
+      "medium_signal": 0.85
+    },
+    "threshold": 0.7,
+    "uncertain_count": 1,
+    "uncertain_percentage": 0.885
+  }
+]

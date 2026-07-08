@@ -3,20 +3,30 @@
   "version": "0.1.0",
   "private": true,
   "main": "node_modules/expo/AppEntry.js",
+  "engines": {
+    "node": ">=20 <23"
+  },
   "scripts": {
     "start": "expo start",
+    "start:tunnel": "expo start --tunnel --clear",
+    "start:lan": "expo start --lan --clear",
+    "start:localhost": "expo start --localhost --clear",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@expo/metro-runtime": "~3.2.3",
     "expo": "~51.0.28",
     "expo-status-bar": "~1.12.1",
     "react": "18.2.0",
-    "react-native": "0.74.5"
+    "react-dom": "18.2.0",
+    "react-native": "0.74.5",
+    "react-native-web": "~0.19.10"
   },
   "devDependencies": {
+    "@expo/ngrok": "^4.1.3",
     "@types/react": "~18.2.79",
     "typescript": "~5.3.3"
   }
