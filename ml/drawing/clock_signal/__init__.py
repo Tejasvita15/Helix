@@ -1,28 +1,13 @@
-"""MindTrail-owned clock drawing image baseline package."""
+"""MindTrail-owned clock drawing image baseline package.
 
-from .features import (
-    ClockImageRecord,
-    extract_hog_features_from_path,
-    extract_hog_features_from_zip,
-    iter_clock_image_records,
-)
-from .labels import (
-    ALL_OUTPUT_SIGNALS,
-    SAFETY_STATEMENT,
-    SIGNAL_CLASSES,
-    SIGNAL_TEXT,
-    shulman_score_to_signal,
-)
-from .renderer import DrawingCompletionStats, compute_completion_stats, render_strokes_to_image
-from .schemas import (
-    ClockCanvas,
-    ClockDrawingMetadata,
-    ClockDrawingPayload,
-    ClockPoint,
-    ClockScoreResult,
-    ClockStroke,
-)
-from .scorer import build_safe_result, load_model, score_image
+Imports are intentionally lazy so experimental CNN modules can be used even
+when optional HOG/scikit-image dependencies are not installed correctly.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
 
 __all__ = [
     "ALL_OUTPUT_SIGNALS",
@@ -47,3 +32,41 @@ __all__ = [
     "score_image",
     "shulman_score_to_signal",
 ]
+
+
+_EXPORT_MODULES = {
+    "ALL_OUTPUT_SIGNALS": ".labels",
+    "ClockCanvas": ".schemas",
+    "ClockDrawingMetadata": ".schemas",
+    "ClockDrawingPayload": ".schemas",
+    "ClockImageRecord": ".features",
+    "ClockPoint": ".schemas",
+    "ClockScoreResult": ".schemas",
+    "ClockStroke": ".schemas",
+    "DrawingCompletionStats": ".renderer",
+    "SAFETY_STATEMENT": ".labels",
+    "SIGNAL_CLASSES": ".labels",
+    "SIGNAL_TEXT": ".labels",
+    "build_safe_result": ".scorer",
+    "compute_completion_stats": ".renderer",
+    "extract_hog_features_from_path": ".features",
+    "extract_hog_features_from_zip": ".features",
+    "iter_clock_image_records": ".features",
+    "load_model": ".scorer",
+    "render_strokes_to_image": ".renderer",
+    "score_image": ".scorer",
+    "shulman_score_to_signal": ".labels",
+}
+
+
+def __getattr__(name: str) -> Any:
+    module_name = _EXPORT_MODULES.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    from importlib import import_module
+
+    module = import_module(module_name, package=__name__)
+    value = getattr(module, name)
+    globals()[name] = value
+    return value

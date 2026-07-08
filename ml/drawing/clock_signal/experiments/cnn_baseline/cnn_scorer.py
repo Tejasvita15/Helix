@@ -110,12 +110,17 @@ def score_cnn_image(
     confidence = float(probabilities[best_index].item())
     predicted_signal = loaded.classes[best_index]
     signal_band = UNCERTAIN_SIGNAL if confidence < threshold else predicted_signal
+    class_probabilities = {
+        loaded.classes[index]: round(float(probability.item()), 6)
+        for index, probability in enumerate(probabilities)
+    }
 
     return _build_safe_result(
         signal_band=signal_band,
         confidence=confidence,
         model_version=loaded.model_version,
         scoring_mode=loaded.scoring_mode,
+        class_probabilities=class_probabilities,
     )
 
 
@@ -232,6 +237,7 @@ def _build_safe_result(
     confidence: float,
     model_version: str,
     scoring_mode: str,
+    class_probabilities: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     safe_signal = signal_band if signal_band in (*DEFAULT_CLASS_ORDER, UNCERTAIN_SIGNAL) else UNCERTAIN_SIGNAL
     return {
@@ -244,17 +250,18 @@ def _build_safe_result(
         "report_summary": _report_summary_for_signal(safe_signal),
         "model_version": model_version,
         "scoring_mode": scoring_mode,
+        "class_probabilities": class_probabilities or {},
     }
 
 
 def _explanation_for_signal(signal_band: str) -> str:
     if signal_band == LOW_SIGNAL:
-        return "No strong visuospatial/planning signal was detected in this clock image."
+        return "No strong visuospatial/planning signal was detected in this clock image. This is not a diagnosis."
     if signal_band == MEDIUM_SIGNAL:
-        return "A possible visuospatial/planning signal was detected in this clock image."
+        return "A possible visuospatial/planning signal was detected in this clock image. This is not a diagnosis."
     if signal_band == HIGHER_SIGNAL:
-        return "A stronger possible visuospatial/planning signal was detected in this clock image."
-    return "The drawing could not be scored confidently by the experimental CNN."
+        return "A stronger possible visuospatial/planning signal was detected in this clock image. This is not a diagnosis."
+    return "The drawing could not be scored confidently by the experimental CNN. This is not a diagnosis."
 
 
 def _report_summary_for_signal(signal_band: str) -> str:
