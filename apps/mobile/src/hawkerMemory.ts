@@ -55,6 +55,11 @@ const DEFAULT_MEMORY_ORDER_COUNT = 4;
 const DEFAULT_MEMORY_QUESTION_COUNT = 3;
 const DEFAULT_MEMORY_OPTION_COUNT = 3;
 
+type OptionCandidate = {
+  id: string;
+  label: string;
+};
+
 export type HawkerFoodSlug =
   | "chicken-rice"
   | "laksa"
@@ -255,35 +260,102 @@ function shuffle<T>(items: T[], random: () => number): T[] {
   return copy;
 }
 
+function normalizeOptionLabel(label: string): string {
+  return label.trim().toLocaleLowerCase();
+}
+
+function uniqueOptionCandidates(candidates: OptionCandidate[]): OptionCandidate[] {
+  const seenIds = new Set<string>();
+  const seenLabels = new Set<string>();
+
+  return candidates.filter((candidate) => {
+    const label = normalizeOptionLabel(candidate.label);
+    if (seenIds.has(candidate.id) || seenLabels.has(label)) {
+      return false;
+    }
+    seenIds.add(candidate.id);
+    seenLabels.add(label);
+    return true;
+  });
+}
+
+function foodCandidate(item: HawkerMemoryItem): OptionCandidate {
+  return {
+    id: `food:${item.slug}`,
+    label: item.item,
+  };
+}
+
+function personCandidate(item: HawkerMemoryItem): OptionCandidate {
+  return {
+    id: `person:${normalizeOptionLabel(item.person)}`,
+    label: item.person,
+  };
+}
+
+function optionIdForLabel(label: string): string {
+  const foodVisual = getHawkerFoodVisual(label);
+  if (foodVisual) {
+    return `food:${foodVisual.slug}`;
+  }
+  return `person:${normalizeOptionLabel(label)}`;
+}
+
 function takeDistractors(
-  correctAnswer: string,
-  candidates: string[],
+  correctAnswer: OptionCandidate,
+  candidates: OptionCandidate[],
   random: () => number,
-  count = 3,
-): string[] {
-  return shuffle(
-    candidates.filter((candidate) => candidate !== correctAnswer),
-    random,
-  ).slice(0, count);
+  count = DEFAULT_MEMORY_OPTION_COUNT - 1,
+): OptionCandidate[] {
+  const correctLabel = normalizeOptionLabel(correctAnswer.label);
+  return shuffle(uniqueOptionCandidates(candidates), random)
+    .filter(
+      (candidate) =>
+        candidate.id !== correctAnswer.id &&
+        normalizeOptionLabel(candidate.label) !== correctLabel,
+    )
+    .slice(0, count);
 }
 
 function makeOptions(
-  correctAnswer: string,
-  candidates: string[],
+  correctAnswer: OptionCandidate,
+  candidates: OptionCandidate[],
   random: () => number,
 ): string[] {
-  return shuffle(
-    [
-      correctAnswer,
-      ...takeDistractors(
-        correctAnswer,
-        candidates,
-        random,
-        DEFAULT_MEMORY_OPTION_COUNT - 1,
-      ),
-    ],
-    random,
+  return shuffle([correctAnswer, ...takeDistractors(correctAnswer, candidates, random)], random)
+    .slice(0, DEFAULT_MEMORY_OPTION_COUNT)
+    .map((candidate) => candidate.label);
+}
+
+function assertValidHawkerMemoryTask(task: HawkerMemoryTask): void {
+  const shownItemLabels = new Set(
+    task.studyItems.map((studyItem) => normalizeOptionLabel(studyItem.item)),
   );
+
+  for (const question of task.questions) {
+    const optionIds = question.options.map(optionIdForLabel);
+    const optionLabels = question.options.map(normalizeOptionLabel);
+    if (new Set(optionIds).size !== optionIds.length) {
+      throw new Error(`Duplicate option ids for ${question.questionId}`);
+    }
+    if (new Set(optionLabels).size !== optionLabels.length) {
+      throw new Error(`Duplicate option labels for ${question.questionId}`);
+    }
+    if (question.options.length !== DEFAULT_MEMORY_OPTION_COUNT) {
+      throw new Error(`Unexpected option count for ${question.questionId}`);
+    }
+    if (question.type === "not_shown_item") {
+      const notShownCount = question.options.filter(
+        (option) => !shownItemLabels.has(normalizeOptionLabel(option)),
+      ).length;
+      if (
+        notShownCount !== 1 ||
+        shownItemLabels.has(normalizeOptionLabel(question.correctAnswer))
+      ) {
+        throw new Error(`Invalid not-shown options for ${question.questionId}`);
+      }
+    }
+  }
 }
 
 export function createHawkerMemoryTask(seed = "demo-session-001"): HawkerMemoryTask {
@@ -293,10 +365,13 @@ export function createHawkerMemoryTask(seed = "demo-session-001"): HawkerMemoryT
     (poolItem) =>
       !studyItems.some((studyItem) => studyItem.item === poolItem.item),
   );
-  const distractorItem = shuffle(unseenItems, random)[0]?.item ?? "Ice Kacang";
-  const distractorVisual = getHawkerFoodVisual(distractorItem);
-  const people = studyItems.map((studyItem) => studyItem.person);
-  const shownItems = studyItems.map((studyItem) => studyItem.item);
+  const people = uniqueOptionCandidates(studyItems.map(personCandidate));
+  const shownItems = uniqueOptionCandidates(studyItems.map(foodCandidate));
+  const notShownCandidate =
+    uniqueOptionCandidates(shuffle(unseenItems, random).map(foodCandidate))[0] ?? {
+      id: "food:ice-kachang",
+      label: "Ice Kachang",
+    };
 
   const baseQuestions: HawkerMemoryQuestion[] = [
     {
@@ -304,7 +379,7 @@ export function createHawkerMemoryTask(seed = "demo-session-001"): HawkerMemoryT
       type: "person_for_item",
       prompt: `Who ordered ${studyItems[0].item}?`,
       correctAnswer: studyItems[0].person,
-      options: makeOptions(studyItems[0].person, people, random),
+      options: makeOptions(personCandidate(studyItems[0]), people, random),
       foodLabel: studyItems[0].item,
       foodSlug: studyItems[0].slug,
       foodEmoji: studyItems[0].emoji,
@@ -315,31 +390,24 @@ export function createHawkerMemoryTask(seed = "demo-session-001"): HawkerMemoryT
       type: "item_for_person",
       prompt: `What did ${studyItems[1].person} order?`,
       correctAnswer: studyItems[1].item,
-      options: makeOptions(studyItems[1].item, shownItems, random),
+      options: makeOptions(foodCandidate(studyItems[1]), shownItems, random),
     },
     {
       questionId: "q3",
       type: "not_shown_item",
       prompt: "Which item was not shown?",
-      correctAnswer: distractorItem,
+      correctAnswer: notShownCandidate.label,
       options: shuffle(
-        [
-          distractorItem,
-          ...shuffle(shownItems, random).slice(0, DEFAULT_MEMORY_OPTION_COUNT - 1),
-        ],
+        [notShownCandidate, ...shuffle(shownItems, random).slice(0, DEFAULT_MEMORY_OPTION_COUNT - 1)],
         random,
-      ),
-      foodLabel: distractorVisual?.label,
-      foodSlug: distractorVisual?.slug,
-      foodEmoji: distractorVisual?.emoji,
-      foodImage: distractorVisual?.image,
+      ).map((candidate) => candidate.label),
     },
     {
       questionId: "q4",
       type: "person_for_item",
       prompt: `Who ordered ${studyItems[2].item}?`,
       correctAnswer: studyItems[2].person,
-      options: makeOptions(studyItems[2].person, people, random),
+      options: makeOptions(personCandidate(studyItems[2]), people, random),
       foodLabel: studyItems[2].item,
       foodSlug: studyItems[2].slug,
       foodEmoji: studyItems[2].emoji,
@@ -350,15 +418,17 @@ export function createHawkerMemoryTask(seed = "demo-session-001"): HawkerMemoryT
       type: "item_for_person",
       prompt: `What did ${studyItems[3].person} order?`,
       correctAnswer: studyItems[3].item,
-      options: makeOptions(studyItems[3].item, shownItems, random),
+      options: makeOptions(foodCandidate(studyItems[3]), shownItems, random),
     },
   ];
 
-  return {
+  const task = {
     taskId: TASK_ID,
     studyItems,
     questions: baseQuestions.slice(0, DEFAULT_MEMORY_QUESTION_COUNT),
   };
+  assertValidHawkerMemoryTask(task);
+  return task;
 }
 
 export function scoreHawkerMemoryTask(

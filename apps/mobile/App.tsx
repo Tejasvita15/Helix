@@ -124,15 +124,25 @@ const MIN_LOCAL_DRAWING_POINTS = 20;
 const DEFAULT_MEMORY_STUDY_SECONDS = 20;
 
 function getApiBaseUrl() {
+  const explicitBaseUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
+  if (explicitBaseUrl) {
+    return explicitBaseUrl.replace(/\/$/, "");
+  }
+
   if (Platform.OS === "web") {
     return "http://localhost:8000";
   }
 
-  // TODO: For physical device demos, configure this with the host machine IP.
   const scriptUrl = NativeModules.SourceCode?.scriptURL as string | undefined;
-  const match = scriptUrl?.match(/https?:\/\/([^:/]+)/);
-  if (match?.[1]) {
-    return `http://${match[1]}:8000`;
+  if (scriptUrl) {
+    try {
+      const parsedUrl = new URL(scriptUrl);
+      if (parsedUrl.hostname) {
+        return `http://${parsedUrl.hostname}:8000`;
+      }
+    } catch (error) {
+      // Fall through to the local simulator defaults below.
+    }
   }
 
   return Platform.OS === "android" ? "http://10.0.2.2:8000" : "http://127.0.0.1:8000";
@@ -230,17 +240,25 @@ function logDrawingPayloadForDev(payload: DrawingScorePayload) {
 }
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
 
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+  try {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Request failed: ${response.status}`);
+    }
+
+    return response.json() as Promise<T>;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return response.json() as Promise<T>;
 }
 
 function PrimaryButton({
@@ -441,6 +459,7 @@ function MemoryAnswerOption({
   const foodVisual = getHawkerFoodVisual(label);
   const { width: screenWidth } = useWindowDimensions();
   const isCompactMemoryLayout = screenWidth < 390;
+  const isFoodOption = Boolean(foodVisual);
 
   return (
     <Pressable
@@ -448,6 +467,8 @@ function MemoryAnswerOption({
       onPress={onPress}
       style={({ pressed }) => [
         styles.memoryOption,
+        isFoodOption && styles.memoryFoodTile,
+        isFoodOption && (isCompactMemoryLayout ? styles.memoryFoodTileCompact : styles.memoryFoodTileWide),
         pressed && styles.memoryOptionPressed,
       ]}
     >
@@ -456,14 +477,16 @@ function MemoryAnswerOption({
           emoji={foodVisual.emoji}
           image={foodVisual.image}
           label={foodVisual.label}
-          size={isCompactMemoryLayout ? "option" : "medium"}
+          size="medium"
         />
       ) : (
         <View style={styles.personOptionIcon}>
           <Text style={styles.personOptionInitial}>{label.charAt(0)}</Text>
         </View>
       )}
-      <Text style={styles.memoryOptionText}>{label}</Text>
+      <Text style={[styles.memoryOptionText, isFoodOption && styles.memoryFoodTileText]}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
@@ -945,6 +968,9 @@ export default function App() {
         </ScreenShell>
       );
     }
+    const memoryOptionsAreFood = currentMemoryQuestion.options.every((option) =>
+      getHawkerFoodVisual(option),
+    );
 
     return (
       <ScreenShell title="Now let's recall the hawker orders" eyebrow={`Question ${memoryProgressText}`}>
@@ -963,7 +989,7 @@ export default function App() {
             </Text>
           </View>
         ) : null}
-        <View style={styles.memoryOptionList}>
+        <View style={[styles.memoryOptionList, memoryOptionsAreFood && styles.memoryTileGrid]}>
           {currentMemoryQuestion.options.map((option) => (
             <MemoryAnswerOption
               key={option}
@@ -1304,6 +1330,10 @@ const styles = StyleSheet.create({
   memoryOptionList: {
     gap: 12,
   },
+  memoryTileGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
   memoryOption: {
     minHeight: 96,
     flexDirection: "row",
@@ -1314,6 +1344,23 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: "#ffffff",
     padding: 12,
+  },
+  memoryFoodTile: {
+    minHeight: 178,
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingVertical: 14,
+  },
+  memoryFoodTileWide: {
+    flexBasis: "47%",
+    flexGrow: 1,
+    maxWidth: "49%",
+  },
+  memoryFoodTileCompact: {
+    flexBasis: "100%",
+    maxWidth: "100%",
   },
   memoryOptionPressed: {
     borderColor: "#0f766e",
@@ -1326,6 +1373,11 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     lineHeight: 26,
     letterSpacing: 0,
+  },
+  memoryFoodTileText: {
+    flex: 0,
+    alignSelf: "stretch",
+    textAlign: "center",
   },
   foodVisual: {
     width: 72,
