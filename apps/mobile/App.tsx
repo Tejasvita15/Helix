@@ -1539,13 +1539,13 @@ export default function App() {
   if (screen === "memoryStudy") {
     return (
       <ScreenShell title="Remember these orders" eyebrow="Study time">
-        <MTCard tone="lavender" style={styles.memoryTimerCard}>
+        <MTCard tone="lavender" style={[styles.splitCardRow, styles.memoryTimerCard]}>
           <Text style={styles.statusText}>Study time remaining</Text>
           <Text style={styles.memoryTimer}>{memoryCountdown}s</Text>
         </MTCard>
         <View style={styles.memoryOrderList}>
           {memoryTask.studyItems.map((studyItem) => (
-            <MTCard key={`${studyItem.person}-${studyItem.item}`} tone="sage" style={styles.memoryOrderCard}>
+            <MTCard key={`${studyItem.person}-${studyItem.item}`} tone="sage" style={styles.memoryRowCard}>
               <FoodVisual
                 emoji={studyItem.emoji}
                 image={studyItem.image}
@@ -1586,7 +1586,7 @@ export default function App() {
             Tell us what is happening in this picture. Speak naturally for up to 5 minutes.
           </Text>
         </MTCard>
-        <MTCard tone="primary" style={styles.voiceStatusRow}>
+        <MTCard tone="primary" style={[styles.splitCardRow, styles.voiceStatusRow]}>
           <View>
             <Text style={styles.statusText}>Status</Text>
             <Text style={styles.signalReason}>{voiceStatus}</Text>
@@ -1657,7 +1657,7 @@ export default function App() {
         <Text style={styles.body}>Choose the answer you remember best.</Text>
         <Text style={styles.memoryQuestion}>{currentMemoryQuestion.prompt}</Text>
         {currentMemoryQuestion.foodLabel ? (
-          <MTCard tone="lavender" style={styles.memoryPromptCard}>
+          <MTCard tone="lavender" style={[styles.memoryRowCard, styles.memoryPromptCard]}>
             <FoodVisual
               emoji={currentMemoryQuestion.foodEmoji ?? "Food"}
               image={currentMemoryQuestion.foodImage}
@@ -1818,94 +1818,70 @@ export default function App() {
 
 const styles = StyleSheet.create({
   cardSpacing: {
-    marginBottom: 16,
+    marginBottom: mtSpacing.md,
   },
   welcomeHero: {
-    marginBottom: 16,
+    marginBottom: mtSpacing.md,
   },
   welcomeActivityCard: {
-    marginBottom: 16,
+    marginBottom: mtSpacing.md,
   },
   activityKicker: {
-    marginBottom: 8,
+    marginBottom: mtSpacing.xs,
+    ...mtType.eyebrow,
     color: mtColors.mtAccent,
-    fontSize: 14,
-    fontWeight: "800",
-    letterSpacing: 0,
     textTransform: "uppercase",
   },
   activityList: {
-    gap: 10,
+    gap: mtSpacing.sm,
   },
   activityRow: {
     minHeight: 34,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: mtSpacing.sm,
   },
   activityDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: mtSpacing.sm,
+    height: mtSpacing.sm,
+    borderRadius: mtRadii.pill,
     backgroundColor: mtColors.mtPrimary,
   },
   activityText: {
+    ...mtType.bodyStrong,
     color: mtColors.mtInk,
-    fontSize: 16,
-    fontWeight: "800",
-    lineHeight: 22,
-  },
-  roleCard: {
-    minHeight: 112,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 14,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: mtColors.mtBorder,
-    borderRadius: 24,
-    backgroundColor: mtColors.mtSurface,
-    padding: 18,
-  },
-  roleCardSelected: {
-    borderColor: mtColors.mtPrimary,
-    backgroundColor: mtColors.mtPrimarySoft,
   },
   roleTitle: {
+    ...mtType.sectionTitle,
     color: mtColors.mtInk,
-    fontSize: 22,
-    fontWeight: "800",
-    letterSpacing: 0,
-    lineHeight: 29,
   },
   linkCodeCard: {
     alignItems: "center",
-    marginTop: 16,
-    marginBottom: 16,
+    marginTop: mtSpacing.md,
+    marginBottom: mtSpacing.md,
   },
   linkCodeText: {
     color: mtColors.mtSageDark,
     fontSize: 34,
-    fontWeight: "800",
+    fontWeight: mtFontWeight.extraBold,
     letterSpacing: 4,
     lineHeight: 42,
   },
   timelineRow: {
     flexDirection: "row",
     alignItems: "stretch",
-    gap: 12,
+    gap: mtSpacing.sm,
   },
   timelineRail: {
-    width: 24,
+    width: mtSpacing.xl,
     alignItems: "center",
   },
   timelineNode: {
-    width: 16,
-    height: 16,
+    width: mtSpacing.md,
+    height: mtSpacing.md,
     borderWidth: 3,
     borderColor: mtColors.mtPrimary,
-    borderRadius: 8,
+    borderRadius: mtRadii.pill,
     backgroundColor: mtColors.mtSurface,
   },
   timelineLine: {
@@ -1916,39 +1892,36 @@ const styles = StyleSheet.create({
   },
   timelineCard: {
     flex: 1,
-    marginBottom: 14,
+    marginBottom: mtSpacing.md,
   },
   body: {
-    marginBottom: 18,
+    marginBottom: mtSpacing.lg,
+    ...mtType.body,
     color: mtColors.mtMuted,
-    fontSize: 17,
-    lineHeight: 26,
   },
   disclaimer: {
+    ...mtType.helper,
     color: mtColors.mtMuted,
-    fontSize: 13,
-    lineHeight: 19,
   },
   fieldLabel: {
-    marginTop: 14,
-    marginBottom: 8,
+    marginTop: mtSpacing.md,
+    marginBottom: mtSpacing.xs,
+    ...mtType.eyebrow,
     color: mtColors.mtInk,
-    fontSize: 14,
-    fontWeight: "800",
   },
   segmentRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
+    gap: mtSpacing.xs,
   },
   segment: {
     minHeight: 42,
     justifyContent: "center",
     borderWidth: 1,
     borderColor: mtColors.mtBorder,
-    borderRadius: 16,
+    borderRadius: mtRadii.md,
     backgroundColor: mtColors.mtSurface,
-    paddingHorizontal: 14,
+    paddingHorizontal: mtSpacing.md,
   },
   segmentSelected: {
     borderColor: mtColors.mtPrimary,
@@ -1957,7 +1930,7 @@ const styles = StyleSheet.create({
   segmentText: {
     color: mtColors.mtMuted,
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: mtFontWeight.bold,
   },
   segmentTextSelected: {
     color: mtColors.mtPrimaryDark,
@@ -1967,85 +1940,59 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 14,
+    gap: mtSpacing.md,
     borderBottomWidth: 1,
     borderBottomColor: mtColors.mtBorder,
   },
   switchLabel: {
     flex: 1,
+    ...mtType.helper,
     color: mtColors.mtInk,
-    fontSize: 15,
-    lineHeight: 21,
   },
-  choiceCard: {
-    minHeight: 82,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 14,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: mtColors.mtBorder,
-    borderRadius: 22,
-    backgroundColor: mtColors.mtSurface,
-    padding: 16,
-  },
-  choiceCardSelected: {
+  warningChoiceCard: {
     borderColor: mtColors.mtWarning,
     backgroundColor: mtColors.mtWarningSoft,
   },
-  choiceCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
   choiceTitle: {
+    ...mtType.bodyStrong,
     color: mtColors.mtInk,
-    fontSize: 17,
-    fontWeight: "800",
-    lineHeight: 23,
-  },
-  choiceHelper: {
-    marginTop: 4,
-    color: mtColors.mtMuted,
-    fontSize: 13,
-    fontWeight: "600",
-    lineHeight: 18,
+    fontWeight: mtFontWeight.extraBold,
   },
   picturePrompt: {
     minHeight: 120,
     justifyContent: "center",
-    marginBottom: 18,
+    marginBottom: mtSpacing.lg,
   },
   pictureTitle: {
-    marginBottom: 10,
+    marginBottom: mtSpacing.xs,
+    ...mtType.bodyStrong,
     color: mtColors.mtPrimaryDark,
-    fontSize: 16,
-    fontWeight: "800",
   },
   pictureText: {
+    ...mtType.body,
     color: mtColors.mtInk,
-    fontSize: 18,
-    lineHeight: 27,
   },
   storyImage: {
     width: "100%",
     height: 210,
-    marginBottom: 16,
-    borderRadius: 22,
+    marginBottom: mtSpacing.md,
+    borderRadius: mtRadii.lg,
     backgroundColor: mtColors.mtAccentSoft,
   },
-  voiceStatusRow: {
-    minHeight: 64,
+  splitCardRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 14,
-    marginBottom: 14,
+    gap: mtSpacing.md,
+    marginBottom: mtSpacing.md,
+  },
+  voiceStatusRow: {
+    minHeight: 64,
   },
   recordingDot: {
     width: 18,
     height: 18,
-    borderRadius: 9,
+    borderRadius: mtRadii.pill,
     backgroundColor: mtColors.mtMuted,
   },
   recordingDotLive: {
@@ -2053,68 +2000,55 @@ const styles = StyleSheet.create({
   },
   memoryTimerCard: {
     minHeight: 72,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 14,
-    marginBottom: 16,
   },
   memoryTimer: {
     color: mtColors.mtPrimaryDark,
     fontSize: 28,
-    fontWeight: "800",
+    fontWeight: mtFontWeight.extraBold,
     letterSpacing: 0,
   },
   memoryOrderList: {
-    gap: 12,
-    marginBottom: 14,
+    gap: mtSpacing.sm,
+    marginBottom: mtSpacing.md,
   },
-  memoryOrderCard: {
+  memoryRowCard: {
     minHeight: 144,
     flexDirection: "row",
     alignItems: "center",
-    gap: 18,
+    gap: mtSpacing.lg,
   },
   memoryOrderText: {
     flex: 1,
   },
   memoryReadyText: {
-    marginBottom: 2,
+    marginBottom: mtSpacing.xxs,
     color: mtColors.mtPrimaryDark,
     fontSize: 15,
     lineHeight: 21,
   },
   memoryFoodLabel: {
     flex: 1,
+    ...mtType.sectionTitle,
     color: mtColors.mtInk,
-    fontSize: 21,
-    fontWeight: "800",
-    letterSpacing: 0,
-    lineHeight: 27,
   },
   memoryPersonLabel: {
-    marginTop: 4,
+    marginTop: mtSpacing.xxs,
+    ...mtType.helper,
     color: mtColors.mtMuted,
-    fontSize: 15,
-    letterSpacing: 0,
   },
   memoryQuestion: {
-    marginBottom: 18,
+    marginBottom: mtSpacing.lg,
     color: mtColors.mtInk,
     fontSize: 26,
-    fontWeight: "800",
+    fontWeight: mtFontWeight.extraBold,
     letterSpacing: 0,
     lineHeight: 32,
   },
   memoryPromptCard: {
-    minHeight: 144,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 18,
-    marginBottom: 16,
+    marginBottom: mtSpacing.md,
   },
   memoryOptionList: {
-    gap: 12,
+    gap: mtSpacing.sm,
   },
   memoryTileGrid: {
     flexDirection: "row",
@@ -2124,18 +2058,18 @@ const styles = StyleSheet.create({
     minHeight: 96,
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    gap: mtSpacing.md,
     borderWidth: 1,
     borderColor: mtColors.mtBorder,
-    borderRadius: 20,
+    borderRadius: mtRadii.lg,
     backgroundColor: mtColors.mtSurface,
-    padding: 12,
+    padding: mtSpacing.sm,
   },
   memoryFoodTile: {
     minHeight: 178,
     flexDirection: "column",
     alignItems: "center",
-    paddingVertical: 14,
+    paddingVertical: mtSpacing.md,
   },
   memoryFoodTileWide: {
     flexBasis: "47%",
@@ -2154,7 +2088,7 @@ const styles = StyleSheet.create({
     flex: 1,
     color: mtColors.mtInk,
     fontSize: 19,
-    fontWeight: "800",
+    fontWeight: mtFontWeight.extraBold,
     letterSpacing: 0,
     lineHeight: 25,
   },
@@ -2171,7 +2105,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     borderWidth: 1,
     borderColor: mtColors.mtAccentSoft,
-    borderRadius: 18,
+    borderRadius: mtRadii.lg,
     backgroundColor: mtColors.mtSurfaceSoft,
   },
   foodVisualMedium: {
@@ -2201,18 +2135,18 @@ const styles = StyleSheet.create({
     height: 58,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 18,
+    borderRadius: mtRadii.lg,
     backgroundColor: mtColors.mtLavender,
   },
   personOptionInitial: {
     color: mtColors.mtLavenderDark,
     fontSize: 24,
-    fontWeight: "800",
+    fontWeight: mtFontWeight.extraBold,
     letterSpacing: 0,
   },
   canvasWrap: {
     alignItems: "center",
-    marginBottom: 14,
+    marginBottom: mtSpacing.md,
   },
   canvas: {
     width: 320,
@@ -2220,7 +2154,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     borderWidth: 2,
     borderColor: mtColors.mtInk,
-    borderRadius: 24,
+    borderRadius: mtRadii.card,
     backgroundColor: mtColors.mtSurface,
   },
   canvasGuide: {
@@ -2236,75 +2170,70 @@ const styles = StyleSheet.create({
   strokeLine: {
     position: "absolute",
     height: 4,
-    borderRadius: 2,
+    borderRadius: mtRadii.pill,
     backgroundColor: mtColors.mtInk,
   },
   taskStats: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 8,
+    marginBottom: mtSpacing.xs,
   },
   statText: {
+    ...mtType.eyebrow,
     color: mtColors.mtMuted,
-    fontSize: 14,
-    fontWeight: "700",
   },
   overallBand: {
-    marginBottom: 14,
+    marginBottom: mtSpacing.md,
     borderWidth: 2,
   },
   overallText: {
+    ...mtType.bodyStrong,
     fontSize: 18,
-    fontWeight: "800",
   },
   signalHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 10,
-    marginBottom: 8,
+    gap: mtSpacing.sm,
+    marginBottom: mtSpacing.xs,
   },
   signalDomain: {
     flex: 1,
+    ...mtType.bodyStrong,
     color: mtColors.mtInk,
     fontSize: 16,
-    fontWeight: "800",
     textTransform: "capitalize",
   },
   signalReason: {
+    ...mtType.helper,
     color: mtColors.mtMuted,
-    fontSize: 15,
-    lineHeight: 22,
   },
   statusText: {
-    marginBottom: 8,
+    marginBottom: mtSpacing.xs,
+    ...mtType.eyebrow,
     color: mtColors.mtInk,
-    fontSize: 13,
-    fontWeight: "800",
   },
   metaText: {
-    marginTop: 8,
+    marginTop: mtSpacing.xs,
+    ...mtType.helper,
     color: mtColors.mtMuted,
-    fontSize: 13,
-    lineHeight: 19,
   },
   successText: {
-    marginBottom: 8,
+    marginBottom: mtSpacing.xs,
     color: mtColors.mtSuccess,
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: mtFontWeight.bold,
   },
   errorText: {
-    marginBottom: 8,
+    marginBottom: mtSpacing.xs,
     color: mtColors.mtDanger,
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: mtFontWeight.bold,
     lineHeight: 20,
   },
   recommendation: {
-    marginBottom: 10,
+    marginBottom: mtSpacing.sm,
+    ...mtType.helper,
     color: mtColors.mtInk,
-    fontSize: 15,
-    lineHeight: 22,
   },
 });
