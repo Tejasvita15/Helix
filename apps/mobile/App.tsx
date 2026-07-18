@@ -16,6 +16,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import type { ViewStyle } from "react-native";
 
 import {
   createHawkerMemoryTask,
@@ -30,15 +31,28 @@ import {
   MTBadge,
   MTButton,
   MTCard,
+  MTChoiceCard,
   MTScreen,
   MTTextInput,
   mtColors,
-} from "./src/mindtrailUI";
+  mtFontWeight,
+  mtRadii,
+  mtSpacing,
+  mtType,
+} from "./src/ui";
+import {
+  MindTrailHero,
+  ReportVisualCard,
+  StatusLegend,
+} from "./src/visuals";
 
 type Screen =
   | "welcome"
+  | "role"
+  | "link"
   | "consent"
   | "profile"
+  | "patientHome"
   | "checklist"
   | "memoryIntro"
   | "memoryStudy"
@@ -46,10 +60,14 @@ type Screen =
   | "memoryRecall"
   | "drawing"
   | "results"
-  | "report";
+  | "report"
+  | "completion"
+  | "caregiverJourney"
+  | "caregiverReport";
 
 type Band = "green" | "amber" | "red";
 type SignalBand = "low_signal" | "medium_signal" | "higher_signal" | "uncertain";
+type UserRole = "patient" | "caregiver";
 
 type Signal = {
   domain: string;
@@ -192,6 +210,9 @@ type ChecklistKey =
 const DISCLAIMER =
   "This is not a diagnosis. Please discuss new or worsening concerns with a healthcare professional.";
 
+const drawingSurfaceWebStyle =
+  Platform.OS === "web" ? ({ touchAction: "none", userSelect: "none" } as unknown as ViewStyle) : null;
+
 const DEFAULT_DRAWING_TASK: DrawingTaskPrompt = {
   task_id: "clock_drawing",
   instruction: "Draw a clock shown by the prompt.",
@@ -199,6 +220,7 @@ const DEFAULT_DRAWING_TASK: DrawingTaskPrompt = {
 const MIN_LOCAL_DRAWING_POINTS = 20;
 const MAX_RECORDING_MS = 5 * 60 * 1000;
 const DEFAULT_MEMORY_STUDY_SECONDS = 20;
+const DEFAULT_LINK_CODE = "482913";
 
 const STORY_PICTURES: StoryPicture[] = [
   {
@@ -276,12 +298,12 @@ const initialChecklist: Record<ChecklistKey, boolean> = {
 
 function bandColor(band: Band) {
   if (band === "red") {
-    return mtColors.danger;
+    return mtColors.mtDanger;
   }
   if (band === "amber") {
-    return mtColors.warning;
+    return mtColors.mtWarning;
   }
-  return mtColors.success;
+  return mtColors.mtSuccess;
 }
 
 function bandLabel(band: Band) {
@@ -292,6 +314,32 @@ function bandLabel(band: Band) {
     return "Monitor";
   }
   return "No strong signal";
+}
+
+function summarySignalLabel(band?: Band) {
+  if (band === "red") {
+    return "May need follow-up";
+  }
+  if (band === "amber") {
+    return "Slight change from recent pattern";
+  }
+  if (band === "green") {
+    return "No urgent concern shown";
+  }
+  return "In progress";
+}
+
+function summarySignalTone(band?: Band): React.ComponentProps<typeof ReportVisualCard>["signalTone"] {
+  if (band === "red") {
+    return "review";
+  }
+  if (band === "amber") {
+    return "watch";
+  }
+  if (band === "green") {
+    return "low";
+  }
+  return "uncertain";
 }
 
 function signalBandLabel(signalBand: SignalBand) {
@@ -309,15 +357,15 @@ function signalBandLabel(signalBand: SignalBand) {
 
 function signalBandColor(signalBand: SignalBand) {
   if (signalBand === "higher_signal") {
-    return mtColors.warning;
+    return mtColors.mtWarning;
   }
   if (signalBand === "medium_signal") {
-    return mtColors.primary;
+    return mtColors.mtPrimary;
   }
   if (signalBand === "low_signal") {
-    return mtColors.success;
+    return mtColors.mtSuccess;
   }
-  return mtColors.muted;
+  return mtColors.mtMuted;
 }
 
 function drawingStatusLabel(result: DrawingScoreResult) {
@@ -525,20 +573,38 @@ function SecondaryButton({ label, onPress }: { label: string; onPress: () => voi
   return <MTButton label={label} onPress={onPress} variant="secondary" />;
 }
 
+function parseProgress(eyebrow?: string) {
+  const match = eyebrow?.match(/(?:Step|Question)\s+(\d+)\s+of\s+(\d+)/i);
+  if (!match) {
+    return null;
+  }
+  return {
+    currentStep: Number(match[1]),
+    totalSteps: Number(match[2]),
+  };
+}
+
 function ScreenShell({
   title,
   eyebrow,
   children,
+  scrollEnabled = true,
 }: {
   title: string;
   eyebrow?: string;
   children: React.ReactNode;
+  scrollEnabled?: boolean;
 }) {
+  const progress = parseProgress(eyebrow);
+
   return (
     <MTScreen
       title={title}
       eyebrow={eyebrow}
+      currentStep={progress?.currentStep}
+      totalSteps={progress?.totalSteps}
       footer={<Text style={styles.disclaimer}>{DISCLAIMER}</Text>}
+      scrollEnabled={scrollEnabled}
     >
       {children}
     </MTScreen>
@@ -594,7 +660,7 @@ function LineSegment({ start, end }: { start: Point; end: Point }) {
 }
 
 function DrawingResultCard({ result }: { result: DrawingScoreResult }) {
-  const badgeTone =
+  const badgeTone: React.ComponentProps<typeof MTBadge>["tone"] =
     result.signal_band === "higher_signal"
       ? "warning"
       : result.signal_band === "low_signal"
@@ -603,7 +669,7 @@ function DrawingResultCard({ result }: { result: DrawingScoreResult }) {
           ? "primary"
           : "neutral";
   return (
-    <MTCard tone="primary">
+    <MTCard tone="primary" style={styles.cardSpacing}>
       <View style={styles.signalHeader}>
         <Text style={styles.signalDomain}>Clock drawing</Text>
         <MTBadge label={signalBandLabel(result.signal_band)} tone={badgeTone} />
@@ -617,9 +683,9 @@ function DrawingResultCard({ result }: { result: DrawingScoreResult }) {
 
 function MemoryResultCard({ result }: { result: HawkerMemoryResult }) {
   return (
-    <MTCard tone="sage">
+    <MTCard tone="sage" style={styles.cardSpacing}>
       <View style={styles.signalHeader}>
-        <Text style={styles.signalDomain}>Memory recall game</Text>
+        <Text style={styles.signalDomain}>Memory recall</Text>
         <MTBadge label={`${result.correctCount}/${result.maxScore}`} tone="sage" />
       </View>
       <Text style={styles.statusText}>Recall accuracy: {Math.round(result.accuracy * 100)}%</Text>
@@ -708,12 +774,14 @@ function MemoryAnswerOption({ label, onPress }: { label: string; onPress: () => 
 export default function App() {
   const { width: screenWidth } = useWindowDimensions();
   const [screen, setScreen] = useState<Screen>("welcome");
+  const [role, setRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [drawingTask, setDrawingTask] = useState<DrawingTaskPrompt>(DEFAULT_DRAWING_TASK);
   const [ageBand, setAgeBand] = useState("65-74");
   const [language, setLanguage] = useState("English");
   const [education, setEducation] = useState("Secondary");
+  const [linkCode, setLinkCode] = useState(DEFAULT_LINK_CODE);
   const [caregiverAssisted, setCaregiverAssisted] = useState(true);
   const [checklist, setChecklist] = useState(initialChecklist);
   const [moodChange, setMoodChange] = useState("unsure");
@@ -831,15 +899,19 @@ export default function App() {
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponderCapture: () => true,
         onMoveShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponderCapture: () => true,
         onPanResponderGrant: startStroke,
         onPanResponderMove: addPoint,
+        onPanResponderTerminationRequest: () => false,
         onPanResponderRelease: () => {
           isDrawingRef.current = false;
         },
         onPanResponderTerminate: () => {
           isDrawingRef.current = false;
         },
+        onShouldBlockNativeResponder: () => true,
       }),
     [drawingStartedAt, canvasDimensions.height, canvasDimensions.width],
   );
@@ -955,16 +1027,16 @@ export default function App() {
     setMemoryQuestionStartedAt(Date.now());
   };
 
-  const startSession = async () => {
+  const startSession = async (nextScreen: Screen = "checklist") => {
     setLoading(true);
     try {
       const response = await postJson<{ session_id: string; drawing_task: DrawingTaskPrompt }>(
         "/session/start",
         {
-        age_band: ageBand,
-        preferred_language: language,
-        education_band: education,
-        caregiver_assisted: caregiverAssisted,
+          age_band: ageBand,
+          preferred_language: language,
+          education_band: education,
+          caregiver_assisted: caregiverAssisted,
         },
       );
       setSessionId(response.session_id);
@@ -980,12 +1052,24 @@ export default function App() {
       setVoiceError("");
       setVoiceStatus("Ready to begin");
       resetMemoryTask(response.session_id);
-      setScreen("checklist");
+      setScreen(nextScreen);
     } catch (error) {
       Alert.alert("Backend not reachable", `Start FastAPI at ${API_BASE_URL}, then try again.`);
     } finally {
       setLoading(false);
     }
+  };
+
+  const continueProfile = () => {
+    if (role === "caregiver") {
+      setScreen("link");
+      return;
+    }
+    void startSession("link");
+  };
+
+  const continueConsent = () => {
+    setScreen(role === "caregiver" ? "caregiverJourney" : "patientHome");
   };
 
   const saveChecklist = async () => {
@@ -1203,12 +1287,74 @@ export default function App() {
 
   if (screen === "welcome") {
     return (
-      <ScreenShell title="A 10-minute brain-health check" eyebrow="For older adults and caregivers">
-        <Text style={styles.body}>
-          Complete a caregiver checklist, a hawker memory game, a picture story demo, and a
-          clock drawing task. The result is a GP-ready summary of domain-level risk signals.
-        </Text>
-        <PrimaryButton label="Start check" onPress={() => setScreen("consent")} />
+      <MTScreen
+        showLogo={false}
+        showTrail={false}
+      >
+        <MindTrailHero
+          eyebrow="Today’s Activity"
+          title="MindTrail"
+          subtitle="A calm daily path for short check-ins, brain activity, and a clear summary for follow-up conversations."
+          step={1}
+          totalSteps={4}
+          style={styles.welcomeHero}
+        />
+        <MTCard tone="primary" style={styles.welcomeActivityCard}>
+          <Text style={styles.activityKicker}>Short check-in</Text>
+          <Text style={styles.body}>
+            Share a few context notes, continue into the existing brain activity, and review a
+            GP-ready summary of today’s signals.
+          </Text>
+          <View style={styles.activityList}>
+            <View style={styles.activityRow}>
+              <View style={styles.activityDot} />
+              <Text style={styles.activityText}>Today’s Activity</Text>
+            </View>
+            <View style={styles.activityRow}>
+              <View style={styles.activityDot} />
+              <Text style={styles.activityText}>Short check-in</Text>
+            </View>
+            <View style={styles.activityRow}>
+              <View style={styles.activityDot} />
+              <Text style={styles.activityText}>Brain activity</Text>
+            </View>
+          </View>
+        </MTCard>
+        <PrimaryButton label="Start check" onPress={() => setScreen("role")} />
+      </MTScreen>
+    );
+  }
+
+  if (screen === "role") {
+    return (
+      <ScreenShell title="Choose your role" eyebrow="Welcome">
+        <Text style={styles.body}>MindTrail adjusts the journey for the person checking in and the caregiver reviewing today’s summary.</Text>
+        <MTChoiceCard
+          helper="Start today’s short check-in and brain activity."
+          minHeight={112}
+          onPress={() => {
+            setRole("patient");
+            setScreen("profile");
+          }}
+          selected={role === "patient"}
+          title="Patient"
+          titleStyle={styles.roleTitle}
+        >
+          <MTBadge label="Start" tone="primary" />
+        </MTChoiceCard>
+        <MTChoiceCard
+          helper="Review the patient journey and today’s report summary."
+          minHeight={112}
+          onPress={() => {
+            setRole("caregiver");
+            setScreen("profile");
+          }}
+          selected={role === "caregiver"}
+          title="Caregiver"
+          titleStyle={styles.roleTitle}
+        >
+          <MTBadge label="Review" tone="sage" />
+        </MTChoiceCard>
       </ScreenShell>
     );
   }
@@ -1220,15 +1366,15 @@ export default function App() {
           MindTrail SG does not provide a diagnosis. It helps identify possible thinking and
           planning signals that may be worth discussing with a GP or caregiver.
         </Text>
-        <PrimaryButton label="I understand" onPress={() => setScreen("profile")} />
-        <SecondaryButton label="Back" onPress={() => setScreen("welcome")} />
+        <PrimaryButton label="I understand" onPress={continueConsent} />
+        <SecondaryButton label="Back" onPress={() => setScreen("link")} />
       </ScreenShell>
     );
   }
 
   if (screen === "profile") {
     return (
-      <ScreenShell title="Basic profile" eyebrow="Step 1 of 6">
+      <ScreenShell title="Basic profile" eyebrow={role === "caregiver" ? "Caregiver setup" : "Step 1 of 6"}>
         <FieldLabel>Age band</FieldLabel>
         <View style={styles.segmentRow}>
           {["55-64", "65-74", "75+"].map((value) => (
@@ -1252,20 +1398,124 @@ export default function App() {
           <Text style={styles.switchLabel}>Caregiver helping today</Text>
           <Switch value={caregiverAssisted} onValueChange={setCaregiverAssisted} />
         </View>
-        <PrimaryButton label={loading ? "Starting..." : "Continue"} onPress={startSession} disabled={loading} />
+        <PrimaryButton label={loading ? "Starting..." : "Continue"} onPress={continueProfile} disabled={loading} />
+      </ScreenShell>
+    );
+  }
+
+  if (screen === "link") {
+    return (
+      <ScreenShell title="Link your care circle" eyebrow="6-digit code">
+        <Text style={styles.body}>
+          Use the shared 6-digit code to keep today’s activity and summary connected.
+        </Text>
+        <MTTextInput
+          keyboardType="number-pad"
+          maxLength={6}
+          onChangeText={setLinkCode}
+          value={linkCode}
+        />
+        <MTCard tone="sage" style={styles.linkCodeCard}>
+          <Text style={styles.pictureTitle}>Demo code</Text>
+          <Text style={styles.linkCodeText}>{DEFAULT_LINK_CODE}</Text>
+        </MTCard>
+        <PrimaryButton
+          disabled={linkCode.trim().length !== 6}
+          label="Continue"
+          onPress={() => setScreen("consent")}
+        />
+      </ScreenShell>
+    );
+  }
+
+  if (screen === "patientHome") {
+    return (
+      <ScreenShell title="Patient Home" eyebrow="Today’s Activity">
+        <ReportVisualCard
+          signalLabel="No urgent concern shown"
+          signalTone="low"
+          showDisclaimer={false}
+          style={styles.cardSpacing}
+          summary="A calm check-in, then the existing brain activity sequence."
+          title="Your guided path"
+        />
+        <MTCard tone="primary" style={styles.cardSpacing}>
+          <Text style={styles.pictureTitle}>Short check-in</Text>
+          <Text style={styles.signalReason}>
+            Answer a few context questions before moving into today’s brain activity.
+          </Text>
+        </MTCard>
+        <PrimaryButton label="Start Short check-in" onPress={() => setScreen("checklist")} />
+      </ScreenShell>
+    );
+  }
+
+  if (screen === "caregiverJourney") {
+    return (
+      <ScreenShell title="Patient Journey" eyebrow="Caregiver Home">
+        <Text style={styles.body}>A simple timeline of today’s connected check-in.</Text>
+        {[
+          ["Short check-in", "Linked and ready for today’s context notes."],
+          ["Brain activity", "Patient activity results appear after completion."],
+          ["Report Summary", "A caregiver-ready summary is available for review."],
+        ].map(([title, description], index) => (
+          <View key={title} style={styles.timelineRow}>
+            <View style={styles.timelineRail}>
+              <View style={styles.timelineNode} />
+              {index < 2 ? <View style={styles.timelineLine} /> : null}
+            </View>
+            <MTCard tone={index === 2 ? "lavender" : "sage"} style={styles.timelineCard}>
+              <Text style={styles.pictureTitle}>{title}</Text>
+              <Text style={styles.signalReason}>{description}</Text>
+            </MTCard>
+          </View>
+        ))}
+        <PrimaryButton label="View Report Summary" onPress={() => setScreen("caregiverReport")} />
+      </ScreenShell>
+    );
+  }
+
+  if (screen === "caregiverReport") {
+    return (
+      <ScreenShell title="Report Summary" eyebrow="Caregiver">
+        <ReportVisualCard
+          signalLabel="Slight change from recent pattern"
+          signalTone="watch"
+          showDisclaimer={false}
+          style={styles.cardSpacing}
+          summary="Today’s linked summary is ready to discuss with the patient or GP if concerns persist."
+          title="Today’s Summary"
+        />
+        <MTCard tone="primary" style={styles.cardSpacing}>
+          <Text style={styles.pictureTitle}>Caregiver notes</Text>
+          <Text style={styles.recommendation}>No urgent concern shown in the mock caregiver view.</Text>
+          <Text style={styles.recommendation}>May need follow-up if this differs from the recent pattern.</Text>
+        </MTCard>
+        <StatusLegend style={styles.cardSpacing} />
+        <PrimaryButton label="Start another check" onPress={() => setScreen("welcome")} />
       </ScreenShell>
     );
   }
 
   if (screen === "checklist") {
     return (
-      <ScreenShell title="Caregiver checklist" eyebrow="Step 2 of 6">
-        <Text style={styles.body}>Mark anything that is new, worsening, or worrying recently.</Text>
+      <ScreenShell title="Short check-in" eyebrow="Step 2 of 6">
+        <Text style={styles.body}>Mark anything that feels new, different, or worth mentioning today.</Text>
         {checklistLabels.map((item) => (
-          <View key={item.key} style={styles.switchRow}>
-            <Text style={styles.switchLabel}>{item.label}</Text>
-            <Switch value={checklist[item.key]} onValueChange={() => toggleChecklist(item.key)} />
-          </View>
+          <MTChoiceCard
+            helper={checklist[item.key] ? "Slight change from recent pattern" : "No urgent concern shown"}
+            key={item.key}
+            onPress={() => toggleChecklist(item.key)}
+            selected={checklist[item.key]}
+            style={checklist[item.key] ? styles.warningChoiceCard : null}
+            title={item.label}
+            titleStyle={styles.choiceTitle}
+          >
+            <MTBadge
+              label={checklist[item.key] ? "Noted" : "No"}
+              tone={checklist[item.key] ? "warning" : "neutral"}
+            />
+          </MTChoiceCard>
         ))}
         <FieldLabel>Mood or personality change</FieldLabel>
         <View style={styles.segmentRow}>
@@ -1285,19 +1535,18 @@ export default function App() {
 
   if (screen === "memoryIntro") {
     return (
-      <ScreenShell title="Hawker Memory" eyebrow="Step 3 of 6">
+      <ScreenShell title="Brain activity" eyebrow="Step 3 of 6">
         <Text style={styles.body}>
-          Remember these hawker orders. After one short picture task, we will ask you to recall
-          them.
+          Remember these hawker orders. After one short picture task, we will ask you to recall them.
         </Text>
-        <MTCard tone="accent">
-          <Text style={styles.pictureTitle}>Memory recall game</Text>
+        <MTCard tone="accent" style={styles.cardSpacing}>
+          <Text style={styles.pictureTitle}>Today’s Activity</Text>
           <Text style={styles.signalReason}>
             Study the orders at a comfortable pace. The next task gives a short pause before the
             recall questions.
           </Text>
         </MTCard>
-        <PrimaryButton label="Show orders" onPress={startMemoryStudy} />
+        <PrimaryButton label="Begin brain activity" onPress={startMemoryStudy} />
       </ScreenShell>
     );
   }
@@ -1305,13 +1554,13 @@ export default function App() {
   if (screen === "memoryStudy") {
     return (
       <ScreenShell title="Remember these orders" eyebrow="Study time">
-        <MTCard tone="lavender" style={styles.memoryTimerCard}>
+        <MTCard tone="lavender" style={[styles.splitCardRow, styles.memoryTimerCard]}>
           <Text style={styles.statusText}>Study time remaining</Text>
           <Text style={styles.memoryTimer}>{memoryCountdown}s</Text>
         </MTCard>
         <View style={styles.memoryOrderList}>
           {memoryTask.studyItems.map((studyItem) => (
-            <MTCard key={`${studyItem.person}-${studyItem.item}`} tone="sage" style={styles.memoryOrderCard}>
+            <MTCard key={`${studyItem.person}-${studyItem.item}`} tone="sage" style={styles.memoryRowCard}>
               <FoodVisual
                 emoji={studyItem.emoji}
                 image={studyItem.image}
@@ -1352,7 +1601,7 @@ export default function App() {
             Tell us what is happening in this picture. Speak naturally for up to 5 minutes.
           </Text>
         </MTCard>
-        <MTCard tone="primary" style={styles.voiceStatusRow}>
+        <MTCard tone="primary" style={[styles.splitCardRow, styles.voiceStatusRow]}>
           <View>
             <Text style={styles.statusText}>Status</Text>
             <Text style={styles.signalReason}>{voiceStatus}</Text>
@@ -1360,9 +1609,8 @@ export default function App() {
           <View style={[styles.recordingDot, isRecording && styles.recordingDotLive]} />
         </MTCard>
         <Text style={styles.body}>
-          You can record a real response for Whisper/Auralis scoring, or continue with safe demo
-          metadata if microphone access is not available. After this, we will ask about the hawker
-          orders.
+          You can record a real response or continue with a safe demo sample if microphone access is
+          not available. After this, we will ask about the hawker orders.
         </Text>
         {isRecording ? (
           <PrimaryButton
@@ -1409,9 +1657,9 @@ export default function App() {
   if (screen === "memoryRecall") {
     if (!currentMemoryQuestion) {
       return (
-        <ScreenShell title="Hawker Memory" eyebrow="Needs retry">
+        <ScreenShell title="Brain activity" eyebrow="Needs retry">
           <Text style={styles.body}>The recall question could not be loaded.</Text>
-          <PrimaryButton label="Restart memory game" onPress={() => setScreen("memoryIntro")} />
+          <PrimaryButton label="Restart recall" onPress={() => setScreen("memoryIntro")} />
         </ScreenShell>
       );
     }
@@ -1424,7 +1672,7 @@ export default function App() {
         <Text style={styles.body}>Choose the answer you remember best.</Text>
         <Text style={styles.memoryQuestion}>{currentMemoryQuestion.prompt}</Text>
         {currentMemoryQuestion.foodLabel ? (
-          <MTCard tone="lavender" style={styles.memoryPromptCard}>
+          <MTCard tone="lavender" style={[styles.memoryRowCard, styles.memoryPromptCard]}>
             <FoodVisual
               emoji={currentMemoryQuestion.foodEmoji ?? "Food"}
               image={currentMemoryQuestion.foodImage}
@@ -1449,10 +1697,10 @@ export default function App() {
 
   if (screen === "drawing") {
     return (
-      <ScreenShell title={drawingTask.instruction} eyebrow="Step 5 of 6">
+      <ScreenShell title={drawingTask.instruction} eyebrow="Step 5 of 6" scrollEnabled={false}>
         <View style={styles.canvasWrap}>
           <View
-            style={styles.canvas}
+            style={[styles.canvas, drawingSurfaceWebStyle]}
             onLayout={(event) => {
               const { width, height } = event.nativeEvent.layout;
               setCanvasDimensions({ width, height });
@@ -1480,7 +1728,7 @@ export default function App() {
   if (screen === "results") {
     const signals = scoreSummary ? Object.values(scoreSummary.domain_signals) : drawingSignal ? [drawingSignal] : [];
     return (
-      <ScreenShell title="Results" eyebrow="Step 6 of 6">
+      <ScreenShell title="Today’s Activity" eyebrow="Step 6 of 6">
         {loading ? <ActivityIndicator /> : null}
         {scoreSummary ? (
           <MTCard
@@ -1495,7 +1743,7 @@ export default function App() {
         {memoryResult ? <MemoryResultCard result={memoryResult} /> : null}
         {drawingScoreResult ? <DrawingResultCard result={drawingScoreResult} /> : null}
         {signals.map((signal) => (
-          <MTCard key={signal.domain}>
+          <MTCard key={signal.domain} style={styles.cardSpacing}>
             <View style={styles.signalHeader}>
               <Text style={styles.signalDomain}>{signal.domain.replace(/_/g, " ")}</Text>
               <MTBadge
@@ -1509,199 +1757,313 @@ export default function App() {
         {!drawingScoreResult && signals.length === 0 ? (
           <Text style={styles.body}>Drawing result is not available yet. Return to the drawing task and try again.</Text>
         ) : null}
-        <PrimaryButton label="View report summary" onPress={() => setScreen("report")} />
+        <PrimaryButton label="View Report Summary" onPress={() => setScreen("report")} />
+      </ScreenShell>
+    );
+  }
+
+  if (screen === "completion") {
+    return (
+      <ScreenShell title="All done for today" eyebrow="Completion">
+        <ReportVisualCard
+          signalLabel={summarySignalLabel(scoreSummary?.overall_band)}
+          signalTone={summarySignalTone(scoreSummary?.overall_band)}
+          showDisclaimer={false}
+          style={styles.cardSpacing}
+          summary="Your caregiver can now see today’s summary."
+          title="Today’s Activity complete"
+        />
+        <MTCard tone="sage" style={styles.cardSpacing}>
+          <Text style={styles.pictureTitle}>Next step</Text>
+          <Text style={styles.signalReason}>
+            Keep this as a conversation guide and discuss new or worsening concerns with a healthcare professional.
+          </Text>
+        </MTCard>
+        <PrimaryButton label="Start another check" onPress={() => setScreen("welcome")} />
+      </ScreenShell>
+    );
+  }
+
+  if (screen === "report") {
+    return (
+      <ScreenShell title="All done for today" eyebrow="Report Summary">
+        <ReportVisualCard
+          signalLabel={summarySignalLabel(scoreSummary?.overall_band)}
+          signalTone={summarySignalTone(scoreSummary?.overall_band)}
+          showDisclaimer={false}
+          style={styles.cardSpacing}
+          summary={
+            scoreSummary
+              ? "Your caregiver can now see today’s summary."
+              : "Today’s brain activity is saved. A fuller summary appears after scoring finishes."
+          }
+          title="Today’s Summary"
+        />
+        {memoryResult ? <MemoryResultCard result={memoryResult} /> : null}
+        {drawingScoreResult ? <DrawingResultCard result={drawingScoreResult} /> : null}
+        {scoreSummary ? (
+          <MTCard tone="neutral" style={styles.cardSpacing}>
+            <Text style={styles.pictureTitle}>Follow-up notes</Text>
+            <Text style={styles.metaText}>Session: {scoreSummary.session_id}</Text>
+            {scoreSummary.recommendations.map((item) => (
+              <Text key={item} style={styles.recommendation}>
+                {item}
+              </Text>
+            ))}
+            <Text style={styles.metaText}>HTML report endpoint: {API_BASE_URL}/report/{scoreSummary.session_id}</Text>
+          </MTCard>
+        ) : !drawingScoreResult ? (
+          <Text style={styles.body}>Complete the memory and clock drawing tasks to generate a report summary.</Text>
+        ) : (
+          <Text style={styles.body}>Memory and clock drawing summaries are ready. Caregiver and GP report details can be added after the remaining tasks are scored.</Text>
+        )}
+        <StatusLegend style={styles.cardSpacing} />
+        <PrimaryButton label="Finish today" onPress={() => setScreen("completion")} />
       </ScreenShell>
     );
   }
 
   return (
-    <ScreenShell title="GP-ready report summary" eyebrow="Report">
-      {memoryResult ? <MemoryResultCard result={memoryResult} /> : null}
-      {drawingScoreResult ? <DrawingResultCard result={drawingScoreResult} /> : null}
-      {scoreSummary ? (
-        <>
-          <Text style={styles.body}>Session: {scoreSummary.session_id}</Text>
-          {scoreSummary.recommendations.map((item) => (
-            <Text key={item} style={styles.recommendation}>
-              {item}
-            </Text>
-          ))}
-          <Text style={styles.metaText}>HTML report endpoint: {API_BASE_URL}/report/{scoreSummary.session_id}</Text>
-        </>
-      ) : !drawingScoreResult ? (
-        <Text style={styles.body}>Complete the memory and clock drawing tasks to generate a report summary.</Text>
-      ) : (
-        <Text style={styles.body}>Memory and clock drawing summaries are ready. Caregiver and GP report details can be added after the remaining tasks are scored.</Text>
-      )}
-      <PrimaryButton label="Start another check" onPress={() => setScreen("welcome")} />
+    <ScreenShell title="MindTrail" eyebrow="Ready">
+      <Text style={styles.body}>Return to the start to begin today’s activity.</Text>
+      <PrimaryButton label="Start check" onPress={() => setScreen("welcome")} />
     </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
+  cardSpacing: {
+    marginBottom: mtSpacing.md,
+  },
+  welcomeHero: {
+    marginBottom: mtSpacing.md,
+  },
+  welcomeActivityCard: {
+    marginBottom: mtSpacing.md,
+  },
+  activityKicker: {
+    marginBottom: mtSpacing.xs,
+    ...mtType.eyebrow,
+    color: mtColors.mtAccent,
+    textTransform: "uppercase",
+  },
+  activityList: {
+    gap: mtSpacing.sm,
+  },
+  activityRow: {
+    minHeight: 34,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: mtSpacing.sm,
+  },
+  activityDot: {
+    width: mtSpacing.sm,
+    height: mtSpacing.sm,
+    borderRadius: mtRadii.pill,
+    backgroundColor: mtColors.mtPrimary,
+  },
+  activityText: {
+    ...mtType.bodyStrong,
+    color: mtColors.mtInk,
+  },
+  roleTitle: {
+    ...mtType.sectionTitle,
+    color: mtColors.mtInk,
+  },
+  linkCodeCard: {
+    alignItems: "center",
+    marginTop: mtSpacing.md,
+    marginBottom: mtSpacing.md,
+  },
+  linkCodeText: {
+    color: mtColors.mtSageDark,
+    fontSize: 34,
+    fontWeight: mtFontWeight.extraBold,
+    letterSpacing: 4,
+    lineHeight: 42,
+  },
+  timelineRow: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    gap: mtSpacing.sm,
+  },
+  timelineRail: {
+    width: mtSpacing.xl,
+    alignItems: "center",
+  },
+  timelineNode: {
+    width: mtSpacing.md,
+    height: mtSpacing.md,
+    borderWidth: 3,
+    borderColor: mtColors.mtPrimary,
+    borderRadius: mtRadii.pill,
+    backgroundColor: mtColors.mtSurface,
+  },
+  timelineLine: {
+    flex: 1,
+    width: 2,
+    minHeight: 78,
+    backgroundColor: mtColors.mtBorder,
+  },
+  timelineCard: {
+    flex: 1,
+    marginBottom: mtSpacing.md,
+  },
   body: {
-    marginBottom: 18,
-    color: mtColors.muted,
-    fontSize: 17,
-    lineHeight: 26,
+    marginBottom: mtSpacing.lg,
+    ...mtType.body,
+    color: mtColors.mtMuted,
   },
   disclaimer: {
-    color: mtColors.muted,
-    fontSize: 13,
-    lineHeight: 19,
+    ...mtType.helper,
+    color: mtColors.mtMuted,
   },
   fieldLabel: {
-    marginTop: 14,
-    marginBottom: 8,
-    color: mtColors.ink,
-    fontSize: 14,
-    fontWeight: "800",
+    marginTop: mtSpacing.md,
+    marginBottom: mtSpacing.xs,
+    ...mtType.eyebrow,
+    color: mtColors.mtInk,
   },
   segmentRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
+    gap: mtSpacing.xs,
   },
   segment: {
     minHeight: 42,
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: mtColors.border,
-    borderRadius: 16,
-    backgroundColor: mtColors.surface,
-    paddingHorizontal: 14,
+    borderColor: mtColors.mtBorder,
+    borderRadius: mtRadii.md,
+    backgroundColor: mtColors.mtSurface,
+    paddingHorizontal: mtSpacing.md,
   },
   segmentSelected: {
-    borderColor: mtColors.primary,
-    backgroundColor: mtColors.primarySoft,
+    borderColor: mtColors.mtPrimary,
+    backgroundColor: mtColors.mtPrimarySoft,
   },
   segmentText: {
-    color: mtColors.muted,
+    color: mtColors.mtMuted,
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: mtFontWeight.bold,
   },
   segmentTextSelected: {
-    color: mtColors.primaryDark,
+    color: mtColors.mtPrimaryDark,
   },
   switchRow: {
     minHeight: 56,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 14,
+    gap: mtSpacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: mtColors.border,
+    borderBottomColor: mtColors.mtBorder,
   },
   switchLabel: {
     flex: 1,
-    color: mtColors.ink,
-    fontSize: 15,
-    lineHeight: 21,
+    ...mtType.helper,
+    color: mtColors.mtInk,
+  },
+  warningChoiceCard: {
+    borderColor: mtColors.mtWarning,
+    backgroundColor: mtColors.mtWarningSoft,
+  },
+  choiceTitle: {
+    ...mtType.bodyStrong,
+    color: mtColors.mtInk,
+    fontWeight: mtFontWeight.extraBold,
   },
   picturePrompt: {
     minHeight: 120,
     justifyContent: "center",
-    marginBottom: 18,
+    marginBottom: mtSpacing.lg,
   },
   pictureTitle: {
-    marginBottom: 10,
-    color: mtColors.primaryDark,
-    fontSize: 16,
-    fontWeight: "800",
+    marginBottom: mtSpacing.xs,
+    ...mtType.bodyStrong,
+    color: mtColors.mtPrimaryDark,
   },
   pictureText: {
-    color: mtColors.ink,
-    fontSize: 18,
-    lineHeight: 27,
+    ...mtType.body,
+    color: mtColors.mtInk,
   },
   storyImage: {
     width: "100%",
     height: 210,
-    marginBottom: 16,
-    borderRadius: 22,
-    backgroundColor: mtColors.accentSoft,
+    marginBottom: mtSpacing.md,
+    borderRadius: mtRadii.lg,
+    backgroundColor: mtColors.mtAccentSoft,
   },
-  voiceStatusRow: {
-    minHeight: 64,
+  splitCardRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 14,
-    marginBottom: 14,
+    gap: mtSpacing.md,
+    marginBottom: mtSpacing.md,
+  },
+  voiceStatusRow: {
+    minHeight: 64,
   },
   recordingDot: {
     width: 18,
     height: 18,
-    borderRadius: 9,
-    backgroundColor: mtColors.muted,
+    borderRadius: mtRadii.pill,
+    backgroundColor: mtColors.mtMuted,
   },
   recordingDotLive: {
-    backgroundColor: mtColors.danger,
+    backgroundColor: mtColors.mtDanger,
   },
   memoryTimerCard: {
     minHeight: 72,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 14,
-    marginBottom: 16,
   },
   memoryTimer: {
-    color: mtColors.primaryDark,
+    color: mtColors.mtPrimaryDark,
     fontSize: 28,
-    fontWeight: "800",
+    fontWeight: mtFontWeight.extraBold,
     letterSpacing: 0,
   },
   memoryOrderList: {
-    gap: 12,
-    marginBottom: 14,
+    gap: mtSpacing.sm,
+    marginBottom: mtSpacing.md,
   },
-  memoryOrderCard: {
+  memoryRowCard: {
     minHeight: 144,
     flexDirection: "row",
     alignItems: "center",
-    gap: 18,
+    gap: mtSpacing.lg,
   },
   memoryOrderText: {
     flex: 1,
   },
   memoryReadyText: {
-    marginBottom: 2,
-    color: mtColors.primaryDark,
+    marginBottom: mtSpacing.xxs,
+    color: mtColors.mtPrimaryDark,
     fontSize: 15,
     lineHeight: 21,
   },
   memoryFoodLabel: {
     flex: 1,
-    color: mtColors.ink,
-    fontSize: 21,
-    fontWeight: "800",
-    letterSpacing: 0,
-    lineHeight: 27,
+    ...mtType.sectionTitle,
+    color: mtColors.mtInk,
   },
   memoryPersonLabel: {
-    marginTop: 4,
-    color: mtColors.muted,
-    fontSize: 15,
-    letterSpacing: 0,
+    marginTop: mtSpacing.xxs,
+    ...mtType.helper,
+    color: mtColors.mtMuted,
   },
   memoryQuestion: {
-    marginBottom: 18,
-    color: mtColors.ink,
+    marginBottom: mtSpacing.lg,
+    color: mtColors.mtInk,
     fontSize: 26,
-    fontWeight: "800",
+    fontWeight: mtFontWeight.extraBold,
     letterSpacing: 0,
     lineHeight: 32,
   },
   memoryPromptCard: {
-    minHeight: 144,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 18,
-    marginBottom: 16,
+    marginBottom: mtSpacing.md,
   },
   memoryOptionList: {
-    gap: 12,
+    gap: mtSpacing.sm,
   },
   memoryTileGrid: {
     flexDirection: "row",
@@ -1711,18 +2073,18 @@ const styles = StyleSheet.create({
     minHeight: 96,
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    gap: mtSpacing.md,
     borderWidth: 1,
-    borderColor: mtColors.border,
-    borderRadius: 20,
-    backgroundColor: mtColors.surface,
-    padding: 12,
+    borderColor: mtColors.mtBorder,
+    borderRadius: mtRadii.lg,
+    backgroundColor: mtColors.mtSurface,
+    padding: mtSpacing.sm,
   },
   memoryFoodTile: {
     minHeight: 178,
     flexDirection: "column",
     alignItems: "center",
-    paddingVertical: 14,
+    paddingVertical: mtSpacing.md,
   },
   memoryFoodTileWide: {
     flexBasis: "47%",
@@ -1734,14 +2096,14 @@ const styles = StyleSheet.create({
     maxWidth: "100%",
   },
   memoryOptionPressed: {
-    borderColor: mtColors.primary,
-    backgroundColor: mtColors.primarySoft,
+    borderColor: mtColors.mtPrimary,
+    backgroundColor: mtColors.mtPrimarySoft,
   },
   memoryOptionText: {
     flex: 1,
-    color: mtColors.ink,
+    color: mtColors.mtInk,
     fontSize: 19,
-    fontWeight: "800",
+    fontWeight: mtFontWeight.extraBold,
     letterSpacing: 0,
     lineHeight: 25,
   },
@@ -1757,9 +2119,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: mtColors.accentSoft,
-    borderRadius: 18,
-    backgroundColor: mtColors.surfaceSoft,
+    borderColor: mtColors.mtAccentSoft,
+    borderRadius: mtRadii.lg,
+    backgroundColor: mtColors.mtSurfaceSoft,
   },
   foodVisualMedium: {
     width: 112,
@@ -1788,27 +2150,27 @@ const styles = StyleSheet.create({
     height: 58,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 18,
-    backgroundColor: mtColors.lavender,
+    borderRadius: mtRadii.lg,
+    backgroundColor: mtColors.mtLavender,
   },
   personOptionInitial: {
-    color: mtColors.lavenderDark,
+    color: mtColors.mtLavenderDark,
     fontSize: 24,
-    fontWeight: "800",
+    fontWeight: mtFontWeight.extraBold,
     letterSpacing: 0,
   },
   canvasWrap: {
     alignItems: "center",
-    marginBottom: 14,
+    marginBottom: mtSpacing.md,
   },
   canvas: {
     width: 320,
     height: 320,
     overflow: "hidden",
     borderWidth: 2,
-    borderColor: mtColors.ink,
-    borderRadius: 24,
-    backgroundColor: mtColors.surface,
+    borderColor: mtColors.mtInk,
+    borderRadius: mtRadii.card,
+    backgroundColor: mtColors.mtSurface,
   },
   canvasGuide: {
     position: "absolute",
@@ -1817,81 +2179,76 @@ const styles = StyleSheet.create({
     width: 264,
     height: 264,
     borderWidth: 1,
-    borderColor: mtColors.border,
+    borderColor: mtColors.mtBorder,
     borderRadius: 132,
   },
   strokeLine: {
     position: "absolute",
     height: 4,
-    borderRadius: 2,
-    backgroundColor: mtColors.ink,
+    borderRadius: mtRadii.pill,
+    backgroundColor: mtColors.mtInk,
   },
   taskStats: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 8,
+    marginBottom: mtSpacing.xs,
   },
   statText: {
-    color: mtColors.muted,
-    fontSize: 14,
-    fontWeight: "700",
+    ...mtType.eyebrow,
+    color: mtColors.mtMuted,
   },
   overallBand: {
-    marginBottom: 14,
+    marginBottom: mtSpacing.md,
     borderWidth: 2,
   },
   overallText: {
+    ...mtType.bodyStrong,
     fontSize: 18,
-    fontWeight: "800",
   },
   signalHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 10,
-    marginBottom: 8,
+    gap: mtSpacing.sm,
+    marginBottom: mtSpacing.xs,
   },
   signalDomain: {
     flex: 1,
-    color: mtColors.ink,
+    ...mtType.bodyStrong,
+    color: mtColors.mtInk,
     fontSize: 16,
-    fontWeight: "800",
     textTransform: "capitalize",
   },
   signalReason: {
-    color: mtColors.muted,
-    fontSize: 15,
-    lineHeight: 22,
+    ...mtType.helper,
+    color: mtColors.mtMuted,
   },
   statusText: {
-    marginBottom: 8,
-    color: mtColors.ink,
-    fontSize: 13,
-    fontWeight: "800",
+    marginBottom: mtSpacing.xs,
+    ...mtType.eyebrow,
+    color: mtColors.mtInk,
   },
   metaText: {
-    marginTop: 8,
-    color: mtColors.muted,
-    fontSize: 13,
-    lineHeight: 19,
+    marginTop: mtSpacing.xs,
+    ...mtType.helper,
+    color: mtColors.mtMuted,
   },
   successText: {
-    marginBottom: 8,
-    color: mtColors.success,
+    marginBottom: mtSpacing.xs,
+    color: mtColors.mtSuccess,
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: mtFontWeight.bold,
   },
   errorText: {
-    marginBottom: 8,
-    color: mtColors.danger,
+    marginBottom: mtSpacing.xs,
+    color: mtColors.mtDanger,
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: mtFontWeight.bold,
     lineHeight: 20,
   },
   recommendation: {
-    marginBottom: 10,
-    color: mtColors.ink,
-    fontSize: 15,
-    lineHeight: 22,
+    marginBottom: mtSpacing.sm,
+    ...mtType.helper,
+    color: mtColors.mtInk,
   },
 });

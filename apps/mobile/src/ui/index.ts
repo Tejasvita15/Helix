@@ -1,6 +1,7 @@
 export * from "./theme";
 export * from "./MTScreen";
 export * from "./MTCard";
+export * from "./MTChoiceCard";
 export * from "./MTButton";
 export * from "./MTTextInput";
 export * from "./MTBadge";
