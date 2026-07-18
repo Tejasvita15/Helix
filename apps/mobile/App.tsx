@@ -1,5 +1,4 @@
 import { Audio } from "expo-av";
-import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -11,11 +10,9 @@ import {
   PanResponder,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Switch,
   Text,
-  TextInput,
   useWindowDimensions,
   View,
 } from "react-native";
@@ -29,6 +26,14 @@ import {
   HawkerMemoryTask,
   scoreHawkerMemoryTask,
 } from "./src/hawkerMemory";
+import {
+  MTBadge,
+  MTButton,
+  MTCard,
+  MTScreen,
+  MTTextInput,
+  mtColors,
+} from "./src/mindtrailUI";
 
 type Screen =
   | "welcome"
@@ -271,12 +276,12 @@ const initialChecklist: Record<ChecklistKey, boolean> = {
 
 function bandColor(band: Band) {
   if (band === "red") {
-    return "#b91c1c";
+    return mtColors.danger;
   }
   if (band === "amber") {
-    return "#b45309";
+    return mtColors.warning;
   }
-  return "#047857";
+  return mtColors.success;
 }
 
 function bandLabel(band: Band) {
@@ -304,15 +309,15 @@ function signalBandLabel(signalBand: SignalBand) {
 
 function signalBandColor(signalBand: SignalBand) {
   if (signalBand === "higher_signal") {
-    return "#b45309";
+    return mtColors.warning;
   }
   if (signalBand === "medium_signal") {
-    return "#0f766e";
+    return mtColors.primary;
   }
   if (signalBand === "low_signal") {
-    return "#047857";
+    return mtColors.success;
   }
-  return "#57534e";
+  return mtColors.muted;
 }
 
 function drawingStatusLabel(result: DrawingScoreResult) {
@@ -513,28 +518,11 @@ function PrimaryButton({
   onPress: () => void;
   disabled?: boolean;
 }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.primaryButton,
-        disabled && styles.disabledButton,
-        pressed && !disabled && styles.pressedButton,
-      ]}
-    >
-      <Text style={styles.primaryButtonText}>{label}</Text>
-    </Pressable>
-  );
+  return <MTButton label={label} onPress={onPress} disabled={disabled} />;
 }
 
 function SecondaryButton({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={styles.secondaryButton}>
-      <Text style={styles.secondaryButtonText}>{label}</Text>
-    </Pressable>
-  );
+  return <MTButton label={label} onPress={onPress} variant="secondary" />;
 }
 
 function ScreenShell({
@@ -547,16 +535,13 @@ function ScreenShell({
   children: React.ReactNode;
 }) {
   return (
-    <ScrollView contentContainerStyle={styles.screen}>
-      <StatusBar style="dark" />
-      <View style={styles.header}>
-        <Text style={styles.brand}>MindTrail SG</Text>
-        {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
-        <Text style={styles.title}>{title}</Text>
-      </View>
+    <MTScreen
+      title={title}
+      eyebrow={eyebrow}
+      footer={<Text style={styles.disclaimer}>{DISCLAIMER}</Text>}
+    >
       {children}
-      <Text style={styles.disclaimer}>{DISCLAIMER}</Text>
-    </ScrollView>
+    </MTScreen>
   );
 }
 
@@ -609,42 +594,38 @@ function LineSegment({ start, end }: { start: Point; end: Point }) {
 }
 
 function DrawingResultCard({ result }: { result: DrawingScoreResult }) {
+  const badgeTone =
+    result.signal_band === "higher_signal"
+      ? "warning"
+      : result.signal_band === "low_signal"
+        ? "success"
+        : result.signal_band === "medium_signal"
+          ? "primary"
+          : "neutral";
   return (
-    <View style={styles.signalCard}>
+    <MTCard tone="primary">
       <View style={styles.signalHeader}>
         <Text style={styles.signalDomain}>Clock drawing</Text>
-        <Text
-          style={[
-            styles.bandPill,
-            {
-              color: signalBandColor(result.signal_band),
-              borderColor: signalBandColor(result.signal_band),
-            },
-          ]}
-        >
-          {signalBandLabel(result.signal_band)}
-        </Text>
+        <MTBadge label={signalBandLabel(result.signal_band)} tone={badgeTone} />
       </View>
       <Text style={styles.statusText}>{drawingStatusLabel(result)}</Text>
       <Text style={styles.signalReason}>{result.explanation}</Text>
       <Text style={styles.metaText}>{result.report_summary}</Text>
-    </View>
+    </MTCard>
   );
 }
 
 function MemoryResultCard({ result }: { result: HawkerMemoryResult }) {
   return (
-    <View style={styles.signalCard}>
+    <MTCard tone="sage">
       <View style={styles.signalHeader}>
         <Text style={styles.signalDomain}>Memory recall game</Text>
-        <Text style={[styles.bandPill, { color: "#0f766e", borderColor: "#0f766e" }]}>
-          {result.correctCount}/{result.maxScore}
-        </Text>
+        <MTBadge label={`${result.correctCount}/${result.maxScore}`} tone="sage" />
       </View>
       <Text style={styles.statusText}>Recall accuracy: {Math.round(result.accuracy * 100)}%</Text>
       <Text style={styles.signalReason}>{result.summary}</Text>
       <Text style={styles.metaText}>Domain: memory recall</Text>
-    </View>
+    </MTCard>
   );
 }
 
@@ -1255,7 +1236,7 @@ export default function App() {
           ))}
         </View>
         <FieldLabel>Preferred language</FieldLabel>
-        <TextInput value={language} onChangeText={setLanguage} style={styles.input} />
+        <MTTextInput value={language} onChangeText={setLanguage} />
         <FieldLabel>Education band</FieldLabel>
         <View style={styles.segmentRow}>
           {["Primary", "Secondary", "Post-secondary"].map((value) => (
@@ -1309,13 +1290,13 @@ export default function App() {
           Remember these hawker orders. After one short picture task, we will ask you to recall
           them.
         </Text>
-        <View style={styles.signalCard}>
+        <MTCard tone="accent">
           <Text style={styles.pictureTitle}>Memory recall game</Text>
           <Text style={styles.signalReason}>
             Study the orders at a comfortable pace. The next task gives a short pause before the
             recall questions.
           </Text>
-        </View>
+        </MTCard>
         <PrimaryButton label="Show orders" onPress={startMemoryStudy} />
       </ScreenShell>
     );
@@ -1324,13 +1305,13 @@ export default function App() {
   if (screen === "memoryStudy") {
     return (
       <ScreenShell title="Remember these orders" eyebrow="Study time">
-        <View style={styles.memoryTimerCard}>
+        <MTCard tone="lavender" style={styles.memoryTimerCard}>
           <Text style={styles.statusText}>Study time remaining</Text>
           <Text style={styles.memoryTimer}>{memoryCountdown}s</Text>
-        </View>
+        </MTCard>
         <View style={styles.memoryOrderList}>
           {memoryTask.studyItems.map((studyItem) => (
-            <View key={`${studyItem.person}-${studyItem.item}`} style={styles.memoryOrderCard}>
+            <MTCard key={`${studyItem.person}-${studyItem.item}`} tone="sage" style={styles.memoryOrderCard}>
               <FoodVisual
                 emoji={studyItem.emoji}
                 image={studyItem.image}
@@ -1341,7 +1322,7 @@ export default function App() {
                 <Text style={styles.memoryFoodLabel}>{studyItem.item}</Text>
                 <Text style={styles.memoryPersonLabel}>{studyItem.person}</Text>
               </View>
-            </View>
+            </MTCard>
           ))}
         </View>
         {memoryCountdown === 0 ? (
@@ -1365,19 +1346,19 @@ export default function App() {
           resizeMode="cover"
           accessibilityLabel={selectedPicture.title}
         />
-        <View style={styles.picturePrompt}>
+        <MTCard tone="accent" style={styles.picturePrompt}>
           <Text style={styles.pictureTitle}>{selectedPicture.title}</Text>
           <Text style={styles.pictureText}>
             Tell us what is happening in this picture. Speak naturally for up to 5 minutes.
           </Text>
-        </View>
-        <View style={styles.voiceStatusRow}>
+        </MTCard>
+        <MTCard tone="primary" style={styles.voiceStatusRow}>
           <View>
             <Text style={styles.statusText}>Status</Text>
             <Text style={styles.signalReason}>{voiceStatus}</Text>
           </View>
           <View style={[styles.recordingDot, isRecording && styles.recordingDotLive]} />
-        </View>
+        </MTCard>
         <Text style={styles.body}>
           You can record a real response for Whisper/Auralis scoring, or continue with safe demo
           metadata if microphone access is not available. After this, we will ask about the hawker
@@ -1398,20 +1379,19 @@ export default function App() {
         )}
         <SecondaryButton label="Use demo voice sample" onPress={submitVoiceDemo} />
         {voicePrediction ? (
-          <View style={styles.signalCard}>
+          <MTCard tone="primary">
             <View style={styles.signalHeader}>
               <Text style={styles.signalDomain}>Language</Text>
-              <Text
-                style={[
-                  styles.bandPill,
-                  {
-                    color: bandColor(voicePrediction.voice_signal.band),
-                    borderColor: bandColor(voicePrediction.voice_signal.band),
-                  },
-                ]}
-              >
-                {bandLabel(voicePrediction.voice_signal.band)}
-              </Text>
+              <MTBadge
+                label={bandLabel(voicePrediction.voice_signal.band)}
+                tone={
+                  voicePrediction.voice_signal.band === "red"
+                    ? "danger"
+                    : voicePrediction.voice_signal.band === "amber"
+                      ? "warning"
+                      : "success"
+                }
+              />
             </View>
             <Text style={styles.signalReason}>{voicePrediction.voice_signal.reason}</Text>
             {voicePrediction.prediction.transcription?.text ? (
@@ -1419,7 +1399,7 @@ export default function App() {
                 Transcript: {voicePrediction.prediction.transcription.text}
               </Text>
             ) : null}
-          </View>
+          </MTCard>
         ) : null}
         {voiceError ? <Text style={styles.errorText}>{voiceError}</Text> : null}
       </ScreenShell>
@@ -1444,7 +1424,7 @@ export default function App() {
         <Text style={styles.body}>Choose the answer you remember best.</Text>
         <Text style={styles.memoryQuestion}>{currentMemoryQuestion.prompt}</Text>
         {currentMemoryQuestion.foodLabel ? (
-          <View style={styles.memoryPromptCard}>
+          <MTCard tone="lavender" style={styles.memoryPromptCard}>
             <FoodVisual
               emoji={currentMemoryQuestion.foodEmoji ?? "Food"}
               image={currentMemoryQuestion.foodImage}
@@ -1452,7 +1432,7 @@ export default function App() {
               size={studyFoodVisualSize}
             />
             <Text style={styles.memoryFoodLabel}>{currentMemoryQuestion.foodLabel}</Text>
-          </View>
+          </MTCard>
         ) : null}
         <View style={[styles.memoryOptionList, memoryOptionsAreFood && styles.memoryTileGrid]}>
           {currentMemoryQuestion.options.map((option) => (
@@ -1503,24 +1483,28 @@ export default function App() {
       <ScreenShell title="Results" eyebrow="Step 6 of 6">
         {loading ? <ActivityIndicator /> : null}
         {scoreSummary ? (
-          <View style={[styles.overallBand, { borderColor: bandColor(scoreSummary.overall_band) }]}>
+          <MTCard
+            tone={scoreSummary.overall_band === "green" ? "sage" : "accent"}
+            style={[styles.overallBand, { borderColor: bandColor(scoreSummary.overall_band) }]}
+          >
             <Text style={[styles.overallText, { color: bandColor(scoreSummary.overall_band) }]}>
               Overall: {bandLabel(scoreSummary.overall_band)}
             </Text>
-          </View>
+          </MTCard>
         ) : null}
         {memoryResult ? <MemoryResultCard result={memoryResult} /> : null}
         {drawingScoreResult ? <DrawingResultCard result={drawingScoreResult} /> : null}
         {signals.map((signal) => (
-          <View key={signal.domain} style={styles.signalCard}>
+          <MTCard key={signal.domain}>
             <View style={styles.signalHeader}>
               <Text style={styles.signalDomain}>{signal.domain.replace(/_/g, " ")}</Text>
-              <Text style={[styles.bandPill, { color: bandColor(signal.band), borderColor: bandColor(signal.band) }]}>
-                {bandLabel(signal.band)}
-              </Text>
+              <MTBadge
+                label={bandLabel(signal.band)}
+                tone={signal.band === "red" ? "danger" : signal.band === "amber" ? "warning" : "success"}
+              />
             </View>
             <Text style={styles.signalReason}>{signal.reason}</Text>
-          </View>
+          </MTCard>
         ))}
         {!drawingScoreResult && signals.length === 0 ? (
           <Text style={styles.body}>Drawing result is not available yet. Return to the drawing task and try again.</Text>
@@ -1555,100 +1539,23 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flexGrow: 1,
-    alignItems: "stretch",
-    justifyContent: "center",
-    padding: 24,
-    backgroundColor: "#f7f7f2",
-  },
-  header: {
-    marginBottom: 22,
-  },
-  brand: {
-    marginBottom: 8,
-    color: "#0f766e",
-    fontSize: 15,
-    fontWeight: "800",
-    letterSpacing: 0,
-  },
-  eyebrow: {
-    marginBottom: 8,
-    color: "#57534e",
-    fontSize: 14,
-    fontWeight: "700",
-    letterSpacing: 0,
-  },
-  title: {
-    color: "#111827",
-    fontSize: 30,
-    fontWeight: "800",
-    letterSpacing: 0,
-    lineHeight: 36,
-  },
   body: {
     marginBottom: 18,
-    color: "#374151",
-    fontSize: 16,
-    lineHeight: 24,
+    color: mtColors.muted,
+    fontSize: 17,
+    lineHeight: 26,
   },
   disclaimer: {
-    marginTop: 22,
-    color: "#4b5563",
+    color: mtColors.muted,
     fontSize: 13,
     lineHeight: 19,
-  },
-  primaryButton: {
-    minHeight: 50,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 10,
-    borderRadius: 8,
-    backgroundColor: "#0f766e",
-    paddingHorizontal: 18,
-  },
-  primaryButtonText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  secondaryButton: {
-    minHeight: 48,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 10,
-    borderWidth: 1,
-    borderColor: "#9ca3af",
-    borderRadius: 8,
-    paddingHorizontal: 18,
-  },
-  secondaryButtonText: {
-    color: "#1f2937",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  disabledButton: {
-    opacity: 0.55,
-  },
-  pressedButton: {
-    opacity: 0.88,
   },
   fieldLabel: {
     marginTop: 14,
     marginBottom: 8,
-    color: "#1f2937",
+    color: mtColors.ink,
     fontSize: 14,
     fontWeight: "800",
-  },
-  input: {
-    minHeight: 48,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 8,
-    backgroundColor: "#ffffff",
-    paddingHorizontal: 14,
-    color: "#111827",
-    fontSize: 16,
   },
   segmentRow: {
     flexDirection: "row",
@@ -1659,22 +1566,22 @@ const styles = StyleSheet.create({
     minHeight: 42,
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 8,
-    backgroundColor: "#ffffff",
-    paddingHorizontal: 12,
+    borderColor: mtColors.border,
+    borderRadius: 16,
+    backgroundColor: mtColors.surface,
+    paddingHorizontal: 14,
   },
   segmentSelected: {
-    borderColor: "#0f766e",
-    backgroundColor: "#ccfbf1",
+    borderColor: mtColors.primary,
+    backgroundColor: mtColors.primarySoft,
   },
   segmentText: {
-    color: "#374151",
+    color: mtColors.muted,
     fontSize: 14,
     fontWeight: "700",
   },
   segmentTextSelected: {
-    color: "#115e59",
+    color: mtColors.primaryDark,
   },
   switchRow: {
     minHeight: 56,
@@ -1683,11 +1590,11 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
+    borderBottomColor: mtColors.border,
   },
   switchLabel: {
     flex: 1,
-    color: "#1f2937",
+    color: mtColors.ink,
     fontSize: 15,
     lineHeight: 21,
   },
@@ -1695,20 +1602,15 @@ const styles = StyleSheet.create({
     minHeight: 120,
     justifyContent: "center",
     marginBottom: 18,
-    borderWidth: 1,
-    borderColor: "#d6d3d1",
-    borderRadius: 8,
-    backgroundColor: "#ffffff",
-    padding: 18,
   },
   pictureTitle: {
     marginBottom: 10,
-    color: "#0f766e",
+    color: mtColors.primaryDark,
     fontSize: 16,
     fontWeight: "800",
   },
   pictureText: {
-    color: "#292524",
+    color: mtColors.ink,
     fontSize: 18,
     lineHeight: 27,
   },
@@ -1716,8 +1618,8 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 210,
     marginBottom: 16,
-    borderRadius: 8,
-    backgroundColor: "#d6d3d1",
+    borderRadius: 22,
+    backgroundColor: mtColors.accentSoft,
   },
   voiceStatusRow: {
     minHeight: 64,
@@ -1726,20 +1628,15 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 14,
     marginBottom: 14,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: 8,
-    backgroundColor: "#ffffff",
-    padding: 14,
   },
   recordingDot: {
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: "#9ca3af",
+    backgroundColor: mtColors.muted,
   },
   recordingDotLive: {
-    backgroundColor: "#b91c1c",
+    backgroundColor: mtColors.danger,
   },
   memoryTimerCard: {
     minHeight: 72,
@@ -1748,14 +1645,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 14,
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: 8,
-    backgroundColor: "#ffffff",
-    padding: 14,
   },
   memoryTimer: {
-    color: "#0f766e",
+    color: mtColors.primaryDark,
     fontSize: 28,
     fontWeight: "800",
     letterSpacing: 0,
@@ -1769,24 +1661,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 18,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: 8,
-    backgroundColor: "#ffffff",
-    padding: 12,
   },
   memoryOrderText: {
     flex: 1,
   },
   memoryReadyText: {
     marginBottom: 2,
-    color: "#0f766e",
+    color: mtColors.primaryDark,
     fontSize: 15,
     lineHeight: 21,
   },
   memoryFoodLabel: {
     flex: 1,
-    color: "#111827",
+    color: mtColors.ink,
     fontSize: 21,
     fontWeight: "800",
     letterSpacing: 0,
@@ -1794,13 +1681,13 @@ const styles = StyleSheet.create({
   },
   memoryPersonLabel: {
     marginTop: 4,
-    color: "#57534e",
+    color: mtColors.muted,
     fontSize: 15,
     letterSpacing: 0,
   },
   memoryQuestion: {
     marginBottom: 18,
-    color: "#111827",
+    color: mtColors.ink,
     fontSize: 26,
     fontWeight: "800",
     letterSpacing: 0,
@@ -1812,11 +1699,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 18,
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: 8,
-    backgroundColor: "#ffffff",
-    padding: 12,
   },
   memoryOptionList: {
     gap: 12,
@@ -1831,9 +1713,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 14,
     borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: 8,
-    backgroundColor: "#ffffff",
+    borderColor: mtColors.border,
+    borderRadius: 20,
+    backgroundColor: mtColors.surface,
     padding: 12,
   },
   memoryFoodTile: {
@@ -1852,12 +1734,12 @@ const styles = StyleSheet.create({
     maxWidth: "100%",
   },
   memoryOptionPressed: {
-    borderColor: "#0f766e",
-    backgroundColor: "#ccfbf1",
+    borderColor: mtColors.primary,
+    backgroundColor: mtColors.primarySoft,
   },
   memoryOptionText: {
     flex: 1,
-    color: "#111827",
+    color: mtColors.ink,
     fontSize: 19,
     fontWeight: "800",
     letterSpacing: 0,
@@ -1875,9 +1757,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#d6d3d1",
-    borderRadius: 8,
-    backgroundColor: "#f5f5f4",
+    borderColor: mtColors.accentSoft,
+    borderRadius: 18,
+    backgroundColor: mtColors.surfaceSoft,
   },
   foodVisualMedium: {
     width: 112,
@@ -1906,11 +1788,11 @@ const styles = StyleSheet.create({
     height: 58,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 8,
-    backgroundColor: "#e0f2fe",
+    borderRadius: 18,
+    backgroundColor: mtColors.lavender,
   },
   personOptionInitial: {
-    color: "#075985",
+    color: mtColors.lavenderDark,
     fontSize: 24,
     fontWeight: "800",
     letterSpacing: 0,
@@ -1924,9 +1806,9 @@ const styles = StyleSheet.create({
     height: 320,
     overflow: "hidden",
     borderWidth: 2,
-    borderColor: "#111827",
-    borderRadius: 8,
-    backgroundColor: "#ffffff",
+    borderColor: mtColors.ink,
+    borderRadius: 24,
+    backgroundColor: mtColors.surface,
   },
   canvasGuide: {
     position: "absolute",
@@ -1935,14 +1817,14 @@ const styles = StyleSheet.create({
     width: 264,
     height: 264,
     borderWidth: 1,
-    borderColor: "#d6d3d1",
+    borderColor: mtColors.border,
     borderRadius: 132,
   },
   strokeLine: {
     position: "absolute",
     height: 4,
     borderRadius: 2,
-    backgroundColor: "#111827",
+    backgroundColor: mtColors.ink,
   },
   taskStats: {
     flexDirection: "row",
@@ -1950,28 +1832,17 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   statText: {
-    color: "#4b5563",
+    color: mtColors.muted,
     fontSize: 14,
     fontWeight: "700",
   },
   overallBand: {
     marginBottom: 14,
     borderWidth: 2,
-    borderRadius: 8,
-    backgroundColor: "#ffffff",
-    padding: 14,
   },
   overallText: {
     fontSize: 18,
     fontWeight: "800",
-  },
-  signalCard: {
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: 8,
-    backgroundColor: "#ffffff",
-    padding: 14,
   },
   signalHeader: {
     flexDirection: "row",
@@ -1982,52 +1853,44 @@ const styles = StyleSheet.create({
   },
   signalDomain: {
     flex: 1,
-    color: "#111827",
+    color: mtColors.ink,
     fontSize: 16,
     fontWeight: "800",
     textTransform: "capitalize",
   },
-  bandPill: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    fontSize: 12,
-    fontWeight: "800",
-  },
   signalReason: {
-    color: "#374151",
-    fontSize: 14,
-    lineHeight: 20,
+    color: mtColors.muted,
+    fontSize: 15,
+    lineHeight: 22,
   },
   statusText: {
     marginBottom: 8,
-    color: "#1f2937",
+    color: mtColors.ink,
     fontSize: 13,
     fontWeight: "800",
   },
   metaText: {
     marginTop: 8,
-    color: "#57534e",
+    color: mtColors.muted,
     fontSize: 13,
     lineHeight: 19,
   },
   successText: {
     marginBottom: 8,
-    color: "#047857",
+    color: mtColors.success,
     fontSize: 14,
     fontWeight: "700",
   },
   errorText: {
     marginBottom: 8,
-    color: "#b91c1c",
+    color: mtColors.danger,
     fontSize: 14,
     fontWeight: "700",
     lineHeight: 20,
   },
   recommendation: {
     marginBottom: 10,
-    color: "#1f2937",
+    color: mtColors.ink,
     fontSize: 15,
     lineHeight: 22,
   },

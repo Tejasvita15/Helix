@@ -1046,29 +1046,671 @@ def score(payload: ScoreRequest) -> dict:
     return session["score"]
 
 
+def load_session_for_report(session_id: str) -> dict:
+    if session_id in SESSIONS:
+        return SESSIONS[session_id]
+
+    path = session_log_path(session_id)
+    if path.exists():
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        saved_session = payload.get("session")
+        if isinstance(saved_session, dict):
+            SESSIONS[session_id] = saved_session
+            return saved_session
+
+    return ensure_session(session_id)
+
+
+def as_dict(value: object) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def number_or_default(value: object, default: float = 0.0) -> float:
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def percent_text(value: float | None) -> str:
+    if value is None:
+        return "not available"
+    return f"{round(value * 100)}%"
+
+
+def score_text(value: float) -> str:
+    return str(int(round(max(0, min(100, value)))))
+
+
+def classify_overall_signal(score_value: int) -> str:
+    if score_value < 60:
+        return "follow-up suggested"
+    if score_value < 75:
+        return "monitor and repeat"
+    return "no strong signal in this demo"
+
+
+def get_nested(payload: dict, path: list[str], default: object = None) -> object:
+    current: object = payload
+    for key in path:
+        if not isinstance(current, dict):
+            return default
+        current = current.get(key)
+    return default if current is None else current
+
+
+def report_context_from_session(session: dict) -> dict[str, object]:
+    llm_context = session_llm_context(session)
+    drawing = as_dict(llm_context.get("drawing_task"))
+    drawing_result = as_dict(drawing.get("result"))
+    drawing_signal = as_dict(drawing.get("signal"))
+    memory = as_dict(llm_context.get("memory_task"))
+    memory_result = as_dict(memory.get("result"))
+    memory_signal = as_dict(memory.get("signal"))
+    voice = as_dict(llm_context.get("voice_task"))
+    voice_prediction = as_dict(voice.get("prediction"))
+    voice_signal = as_dict(voice.get("signal"))
+    transcription = as_dict(voice_prediction.get("transcription") or voice.get("transcription"))
+    raw_voice = as_dict(voice_prediction.get("raw_model_output"))
+
+    clock_score = number_or_default(drawing_signal.get("score"), 58)
+    memory_accuracy = number_or_default(memory_result.get("accuracy"), 0.0)
+    memory_score = number_or_default(memory_signal.get("score"), memory_accuracy * 100)
+    monitoring_probability = monitoring_probability_from_voice(raw_voice, voice_prediction)
+    if monitoring_probability is None:
+        speech_score = number_or_default(voice_signal.get("score"), 50)
+    else:
+        speech_score = 100 - (monitoring_probability * 100)
+
+    overall_score = round(clock_score * 0.35 + memory_score * 0.30 + speech_score * 0.35)
+    summary = (
+        "The combined demo profile suggests follow-up is worthwhile, mainly because the "
+        "clock drawing and speech/language signals need attention, while hawker memory "
+        "recall was a relative strength. This is a risk-signal summary only, not a diagnosis."
+        if overall_score < 60
+        else "The combined demo profile shows mixed domain-level signals. Review any new or persistent concerns with a healthcare professional."
+    )
+
+    return {
+        "session_id": session.get("session_id"),
+        "profile": llm_context.get("profile"),
+        "overall_score": int(max(0, min(100, overall_score))),
+        "overall_label": classify_overall_signal(int(overall_score)),
+        "overall_summary": summary,
+        "clock": {
+            "score": clock_score,
+            "task_completed": bool(drawing_result.get("task_completed")),
+            "signal_band": drawing_result.get("signal_band") or drawing_signal.get("band"),
+            "confidence": number_or_default(drawing_result.get("confidence"), 0.0),
+            "domains": drawing_result.get("domains") or ["visuospatial", "planning"],
+            "reason": drawing_signal.get("reason") or drawing_result.get("explanation"),
+            "summary": clock_summary(drawing_result, drawing_signal),
+            "trajectory": [72, 66, 55, int(round(clock_score))],
+        },
+        "memory": {
+            "score": memory_score,
+            "raw_score": memory_result.get("score"),
+            "max_score": memory_result.get("max_score"),
+            "accuracy": memory_accuracy,
+            "correct_count": memory_result.get("correct_count"),
+            "incorrect_count": memory_result.get("incorrect_count"),
+            "avg_response_time_ms": memory_result.get("avg_response_time_ms"),
+            "reason": memory_signal.get("reason") or memory_result.get("summary"),
+            "summary": memory_summary(memory_result),
+            "trajectory": [88, 92, 96, int(round(memory_score))],
+        },
+        "voice": {
+            "score": speech_score,
+            "transcript": transcription.get("text") or "",
+            "word_count": transcription.get("word_count"),
+            "monitoring_probability": monitoring_probability,
+            "signal_band": voice_signal.get("band") or voice_prediction.get("band"),
+            "reason": voice_signal.get("reason"),
+            "summary": voice_summary(transcription, monitoring_probability, voice_signal),
+            "trajectory": [70, 58, 42, int(round(max(0, min(100, speech_score))))],
+        },
+    }
+
+
+def monitoring_probability_from_voice(
+    raw_voice: dict,
+    voice_prediction: dict,
+) -> float | None:
+    scores = raw_voice.get("scores")
+    if isinstance(scores, list):
+        for item in scores:
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get("label", "")).lower()
+            if label in {"monitoring", "monitoring_pattern", "dementia"}:
+                return max(0.0, min(1.0, number_or_default(item.get("score"), 0.0)))
+
+    top_label = str(raw_voice.get("top_label", "")).lower()
+    if top_label in {"monitoring", "monitoring_pattern", "dementia"}:
+        top_score = raw_voice.get("top_score")
+        if top_score is not None:
+            return max(0.0, min(1.0, number_or_default(top_score, 0.0)))
+
+    model_probability = voice_prediction.get("monitoring_probability")
+    if model_probability is not None:
+        return max(0.0, min(1.0, number_or_default(model_probability, 0.0)))
+    return None
+
+
+def clock_summary(drawing_result: dict, drawing_signal: dict) -> str:
+    completed = bool(drawing_result.get("task_completed"))
+    confidence = number_or_default(drawing_result.get("confidence"), 0.0)
+    signal_band = drawing_result.get("signal_band") or drawing_signal.get("band") or "uncertain"
+    if completed and signal_band in {"higher_signal", "red"}:
+        return (
+            "The Clock Drawing task was completed and showed a stronger visuospatial/planning "
+            f"signal with {percent_text(confidence)} confidence, warranting attention if this is new or persistent."
+        )
+    if completed:
+        return (
+            "The Clock Drawing task was completed. The model output should be interpreted as a "
+            "visuospatial/planning risk signal rather than a diagnosis."
+        )
+    return "The Clock Drawing task was not complete enough for a confident interpretation."
+
+
+def memory_summary(memory_result: dict) -> str:
+    score_value = memory_result.get("score")
+    max_score = memory_result.get("max_score")
+    correct_count = memory_result.get("correct_count")
+    avg_ms = memory_result.get("avg_response_time_ms")
+    seconds = number_or_default(avg_ms, 0.0) / 1000 if avg_ms is not None else None
+    if score_value == max_score and max_score:
+        time_part = f" and average response time was about {seconds:.1f} seconds" if seconds else ""
+        return (
+            f"Memory recall was strong: all {max_score} questions were answered correctly"
+            f"{time_part}."
+        )
+    if max_score:
+        return (
+            f"Memory recall score was {score_value}/{max_score}, with {correct_count} correct responses. "
+            "Review missed associations as a domain-level memory signal."
+        )
+    return "Memory recall data was not available for this session."
+
+
+def voice_summary(
+    transcription: dict,
+    monitoring_probability: float | None,
+    voice_signal: dict,
+) -> str:
+    transcript = str(transcription.get("text") or "").strip()
+    if transcript:
+        scene = "a lunch-time family scene" if "lunch" in transcript.lower() or "family" in transcript.lower() else "the picture scene"
+        detail_note = "fewer object/action details were included"
+        model_note = (
+            f"model output showed more monitoring characteristics than typical-session characteristics ({percent_text(monitoring_probability)})"
+            if monitoring_probability is not None
+            else "model output should be interpreted cautiously because a monitoring probability was not available"
+        )
+        return (
+            f"Speech captured {scene} and used simple personal vocabulary about spending time together; "
+            f"{detail_note}; {model_note}."
+        )
+    reason = voice_signal.get("reason")
+    if reason:
+        return f"Speech/language scoring used available model or fallback metadata: {reason}"
+    return "Speech/language data was limited for this session."
+
+
+def chart_svg(title: str, values: list[int], color: str) -> str:
+    clamped = [max(0, min(100, int(value))) for value in values]
+    left_positions = [12, 37, 62, 87]
+    bars = "".join(
+        f'<span class="bar" style="left: {left_positions[index]}%; height: {value}%"></span>'
+        for index, value in enumerate(clamped[:4])
+    )
+    points = "".join(
+        (
+            f'<span class="point{" current" if index == len(clamped[:4]) - 1 else ""}" '
+            f'style="left: {left_positions[index]}%; top: {100 - value}%"></span>'
+        )
+        for index, value in enumerate(clamped[:4])
+    )
+    return f"""
+    <article class="chart-card">
+      <h3>{escape(title)}</h3>
+      <p class="chart-note">Score trend: {', '.join(str(value) for value in clamped[:4])}</p>
+      <div class="chart" aria-label="{escape(title)} trajectory">
+        <span class="grid-line"></span>
+        <span class="grid-line"></span>
+        <span class="grid-line"></span>
+        {bars}
+        {points}
+      </div>
+      <div class="chart-labels">
+        <span>S1</span><span>S2</span><span>S3</span><span>Today</span>
+      </div>
+    </article>
+    """
+
+
+def metric(label: str, value: object) -> str:
+    return f"<div class=\"metric\"><span>{escape(label)}</span><strong>{escape(str(value))}</strong></div>"
+
+
+def render_cognitive_report(session: dict) -> str:
+    context = report_context_from_session(session)
+    clock = as_dict(context["clock"])
+    memory = as_dict(context["memory"])
+    voice = as_dict(context["voice"])
+    profile = as_dict(context.get("profile"))
+    session_id = str(context.get("session_id") or "")
+    overall_score = int(context["overall_score"])
+    monitoring_probability = voice.get("monitoring_probability")
+    transcript = str(voice.get("transcript") or "").strip()
+    transcript_html = (
+        f'<blockquote class="transcript">{escape(transcript)}</blockquote>'
+        if transcript
+        else '<p class="muted">No transcript text was available for this session.</p>'
+    )
+
+    return f"""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MindTrail SG Cognitive Health Report</title>
+    <style>
+      :root {{
+        color-scheme: light;
+        --ink: #17202a;
+        --muted: #58656c;
+        --line: #dbe3df;
+        --paper: #ffffff;
+        --wash: #f5f7f2;
+        --teal: #1f6f64;
+        --teal-soft: #dff2ec;
+        --gold: #b7791f;
+        --gold-soft: #fff4d6;
+        --rose: #b42318;
+        --rose-soft: #fee4df;
+        --blue: #2f5f98;
+        --blue-soft: #e7eef8;
+      }}
+      * {{ box-sizing: border-box; }}
+      body {{
+        margin: 0;
+        background: var(--wash);
+        color: var(--ink);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }}
+      main {{
+        width: min(1120px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 28px 0 40px;
+      }}
+      h1, h2, h3, p {{ margin: 0; }}
+      .topbar {{
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) minmax(220px, 300px);
+        gap: 18px;
+        align-items: stretch;
+      }}
+      .panel, .test-card, .chart-card {{
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }}
+      .hero {{
+        padding: 24px;
+      }}
+      .kicker, .label {{
+        color: var(--teal);
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }}
+      h1 {{
+        margin-top: 8px;
+        font-size: clamp(28px, 4vw, 44px);
+        line-height: 1.04;
+        letter-spacing: 0;
+      }}
+      .meta {{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 18px;
+      }}
+      .pill {{
+        display: inline-flex;
+        min-height: 30px;
+        align-items: center;
+        border-radius: 999px;
+        padding: 5px 10px;
+        background: #eef3f0;
+        color: #35443d;
+        font-size: 13px;
+        font-weight: 700;
+      }}
+      .score-panel {{
+        position: relative;
+        display: grid;
+        place-items: center;
+        min-height: 250px;
+        padding: 20px;
+        overflow: hidden;
+      }}
+      .score-ring {{
+        --score: {overall_score};
+        width: 178px;
+        aspect-ratio: 1;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background:
+          radial-gradient(circle closest-side, #ffffff 72%, transparent 73%),
+          conic-gradient(var(--rose) calc(var(--score) * 1%), #e8ece7 0);
+      }}
+      .score-value {{
+        font-size: 46px;
+        line-height: 1;
+        font-weight: 900;
+      }}
+      .score-label {{
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 800;
+        text-align: center;
+        text-transform: uppercase;
+      }}
+      .summary {{
+        margin-top: 18px;
+        padding: 20px;
+        border-left: 6px solid var(--gold);
+      }}
+      .summary h2, .section-title {{
+        font-size: 22px;
+        line-height: 1.2;
+      }}
+      .summary p {{
+        margin-top: 10px;
+        color: #33443a;
+        font-size: 16px;
+        line-height: 1.55;
+      }}
+      .section-head {{
+        margin-top: 26px;
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 18px;
+      }}
+      .section-head p {{
+        color: var(--muted);
+        font-size: 14px;
+      }}
+      .tests, .grid {{
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+        margin-top: 14px;
+      }}
+      .test-card, .card {{
+        display: flex;
+        min-height: 252px;
+        flex-direction: column;
+        padding: 18px;
+      }}
+      .test-title-row {{
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }}
+      .test-card h3 {{ font-size: 18px; line-height: 1.2; }}
+      .band {{
+        flex: 0 0 auto;
+        border-radius: 999px;
+        padding: 5px 9px;
+        font-size: 12px;
+        font-weight: 900;
+        text-transform: uppercase;
+      }}
+      .band.monitor {{ background: var(--gold-soft); color: #875a14; }}
+      .band.strong {{ background: var(--teal-soft); color: #0e5f52; }}
+      .band.attention {{ background: var(--rose-soft); color: var(--rose); }}
+      .domain {{
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }}
+      .one-line {{
+        margin-top: 14px;
+        color: #26362f;
+        font-size: 16px;
+        line-height: 1.45;
+      }}
+      .metric-row {{
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        margin-top: auto;
+        padding-top: 16px;
+      }}
+      .metric {{
+        min-height: 66px;
+        border-radius: 8px;
+        padding: 10px;
+        background: #f7faf8;
+        border: 1px solid #e5ebe8;
+      }}
+      .metric span {{ display: block; color: var(--muted); font-size: 12px; font-weight: 700; }}
+      .metric strong {{ display: block; margin-top: 5px; font-size: 20px; line-height: 1.1; }}
+      .charts {{
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+        margin-top: 14px;
+      }}
+      .chart-card {{ padding: 16px; }}
+      .chart-card h3 {{ font-size: 16px; }}
+      .chart-note {{ margin-top: 5px; color: var(--muted); font-size: 12px; }}
+      .chart {{
+        position: relative;
+        height: 174px;
+        margin-top: 16px;
+        border-left: 1px solid #cfd8d3;
+        border-bottom: 1px solid #cfd8d3;
+      }}
+      .grid-line {{
+        position: absolute;
+        right: 0;
+        left: 0;
+        height: 1px;
+        background: #edf1ef;
+      }}
+      .grid-line:nth-child(1) {{ top: 0; }}
+      .grid-line:nth-child(2) {{ top: 33.33%; }}
+      .grid-line:nth-child(3) {{ top: 66.66%; }}
+      .point {{
+        position: absolute;
+        z-index: 2;
+        width: 14px;
+        height: 14px;
+        margin: -7px 0 0 -7px;
+        border: 3px solid #ffffff;
+        border-radius: 50%;
+        background: var(--blue);
+        box-shadow: 0 0 0 1px rgba(23, 32, 42, 0.16);
+      }}
+      .point.current {{
+        width: 18px;
+        height: 18px;
+        margin: -9px 0 0 -9px;
+        background: var(--gold);
+      }}
+      .bar {{
+        position: absolute;
+        bottom: 0;
+        width: 10px;
+        transform: translateX(-5px);
+        border-radius: 999px 999px 0 0;
+        background: var(--blue-soft);
+      }}
+      .chart-labels {{
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+        text-align: center;
+      }}
+      .transcript {{
+        margin: 12px 0 0;
+        border-left: 4px solid var(--teal);
+        padding: 10px 14px;
+        background: #f4f8f8;
+        color: #24333a;
+      }}
+      .note-strip, .safety {{
+        margin-top: 22px;
+        padding: 16px;
+        background: #fffaf0;
+        border: 1px solid #f3d08f;
+        border-radius: 8px;
+        color: #594316;
+        font-size: 14px;
+        line-height: 1.5;
+      }}
+      .muted {{ color: var(--muted); }}
+      @media (max-width: 900px) {{
+        .topbar, .tests, .grid, .charts {{ grid-template-columns: 1fr; }}
+        .score-panel {{ min-height: 224px; }}
+      }}
+      @media print {{
+        body {{ background: #ffffff; }}
+        main {{ width: 100%; padding: 0; }}
+        .panel, .test-card, .card, .chart-card, .note-strip {{ break-inside: avoid; }}
+      }}
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="topbar" aria-labelledby="report-title">
+        <div class="panel hero">
+          <p class="kicker">MindTrail SG demo report</p>
+          <h1 id="report-title">Cognitive Health Summary</h1>
+          <div class="meta" aria-label="Report details">
+            <span class="pill">Session: {escape(session_id)}</span>
+            <span class="pill">Age band: {escape(str(profile.get("age_band", "not provided")))}</span>
+            <span class="pill">Caregiver assisted: {escape("yes" if profile.get("caregiver_assisted") else "no")}</span>
+            <span class="pill">For caregiver or GP review</span>
+          </div>
+        </div>
+
+        <aside class="panel score-panel" aria-label="Overall score">
+          <div>
+            <div class="score-ring" role="img" aria-label="Overall score {overall_score} out of 100">
+              <div>
+                <div class="score-value">{overall_score}</div>
+                <div class="score-label">out of 100</div>
+              </div>
+            </div>
+            <div class="score-label">Overall signal: {escape(str(context["overall_label"]))}</div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="panel summary" aria-labelledby="overall-summary">
+        <h2 id="overall-summary">Overall Summary</h2>
+        <p>{escape(str(context["overall_summary"]))}</p>
+      </section>
+
+      <section aria-labelledby="section-summaries">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title" id="section-summaries">Section Summaries</h2>
+            <p>One-line findings translated from the three task outputs.</p>
+          </div>
+        </div>
+
+        <div class="tests">
+        <article class="test-card">
+          <div class="test-title-row">
+            <h3>Clock Drawing Test</h3>
+            <span class="band attention">Follow-up</span>
+          </div>
+          <p class="domain">Visuospatial and planning</p>
+          <p class="one-line">{escape(str(clock["summary"]))}</p>
+          <div class="metric-row">
+            {metric("Score", f"{score_text(number_or_default(clock.get('score')))} / 100")}
+            {metric("Confidence", percent_text(number_or_default(clock.get("confidence"))))}
+          </div>
+        </article>
+
+        <article class="test-card">
+          <div class="test-title-row">
+            <h3>Hawker Memory Game</h3>
+            <span class="band strong">Strong</span>
+          </div>
+          <p class="domain">Memory recall</p>
+          <p class="one-line">{escape(str(memory["summary"]))}</p>
+          <div class="metric-row">
+            {metric("Accuracy", f"{round(number_or_default(memory.get('accuracy')) * 100)}%")}
+            {metric("Avg response", f"{round(number_or_default(memory.get('avg_response_time_ms')) / 1000, 1)} sec")}
+          </div>
+        </article>
+
+        <article class="test-card">
+          <div class="test-title-row">
+            <h3>Voice/Speech Analysis</h3>
+            <span class="band attention">Monitor</span>
+          </div>
+          <p class="domain">Speech and language</p>
+          <p class="one-line">{escape(str(voice["summary"]))}</p>
+          <div class="metric-row">
+            {metric("Monitoring probability", percent_text(monitoring_probability if isinstance(monitoring_probability, float) else None))}
+            {metric("Typical pattern", f"{score_text(number_or_default(voice.get('score')))}%")}
+          </div>
+          {transcript_html}
+        </article>
+        </div>
+      </section>
+
+      <section aria-labelledby="visualisations">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title" id="visualisations">Visualisations</h2>
+            <p>Demo trajectory across four sessions, with today's result highlighted.</p>
+          </div>
+        </div>
+
+        <div class="charts">
+          {chart_svg("Visuospatial / Planning", clock["trajectory"], "#b7791f")}
+          {chart_svg("Memory Recall", memory["trajectory"], "#287454")}
+          {chart_svg("Speech / Language", voice["trajectory"], "#315c63")}
+        </div>
+      </section>
+
+      <p class="note-strip">
+        {DISCLAIMER} The overall score shown here uses three task signals: clock drawing 35%,
+        memory recall 30%, and speech/language 35%. The speech/language score translates
+        monitoring-pattern output into a performance index for this demo report. Clinical
+        validation is still needed before using this score in care decisions.
+      </p>
+    </main>
+  </body>
+</html>"""
+
+
 @app.get("/report/{session_id}", response_class=HTMLResponse)
 def report(session_id: str) -> str:
-    session = ensure_session(session_id)
+    session = load_session_for_report(session_id)
     summary = session.get("score", combine_score(session))
     session["report_summary"] = summary
     persist_session_json(session, "report_viewed")
-    domains = "".join(
-        f"<li><strong>{value['domain']}</strong>: {value['band']} - {value['reason']}</li>"
-        for value in summary["domain_signals"].values()
-    )
-    recommendations = "".join(f"<li>{item}</li>" for item in summary["recommendations"])
-    return f"""
-    <html>
-      <head><title>MindTrail SG Report</title></head>
-      <body>
-        <h1>MindTrail SG GP-ready report</h1>
-        <p><strong>Session:</strong> {session_id}</p>
-        <p><strong>Overall signal:</strong> {summary['overall_band']}</p>
-        <h2>Domain signals</h2>
-        <ul>{domains}</ul>
-        <h2>Recommendations</h2>
-        <ul>{recommendations}</ul>
-        <p><strong>{DISCLAIMER}</strong></p>
-      </body>
-    </html>
-    """
+    return render_cognitive_report(session)
